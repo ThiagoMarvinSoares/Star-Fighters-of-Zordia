@@ -1,6 +1,6 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MISSILE_GAP, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
+import { SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
 import { parseSave, world, best, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
@@ -29,7 +29,7 @@ const put = (e: Enemy, x: number, y: number) => { e.x = e.wx = e.hx = x; e.y = e
 // Começo de cada bloco que roda a simulação: o jogador volta a um estado conhecido (parado onde está, inteiro, sem
 // alvo, armas e feixe desligados) e somem tiros, partículas e perseguições deixados pelo bloco anterior.
 const reset = () => {
-  Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: false, mining: null, beam: false, cd: 0, mcd: 0, mload: [], mleft: true, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
+  Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: null, mining: null, beam: false, cd: 0, mis: [], mleft: true, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
   shots.length = 0; parts.length = 0;
   for (const e of enemies) e.hostile = false;
 };
@@ -88,7 +88,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
   type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[] };
   const ships = keys(SHIPS), sum = (l: ModKey[]) => l.reduce((a, m) => a + MODS[m].val, 0);
   const income = (k: Kit) => { // créditos por minuto
-    const dps = (sum(k.laser) + sum(k.missile) * MISSILE_CHARGES / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
+    const dps = (sum(k.laser) + sum(k.missile) / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
     return Math.max(0, ...ENEMIES.map(e => {
       const fight = (e.hp + e.sh) / dps, taken = e.dmg / 1.3 * fight;
       if (taken > sh + .35 * hp) return 0; // não aguenta caçar esse em sequência
@@ -182,44 +182,44 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   e.hp = e.t.hp; p.hp = stats().maxHp; p.firing = false; p.target = null; shots.length = 0;
 }
 
-// mísseis: cada módulo tem 2 cargas; um aperto lança uma, contra o alvo travado, alternando esquerda e direita; cada
-// carga volta sozinha depois de MISSILE_CD; causam o dano cheio quando acertam e erram com a mesma chance dos lasers
+// mísseis: cada módulo equipado é uma casa e um míssil; um aperto lança, contra o alvo travado, e ele volta depois de
+// MISSILE_CD; lançamentos seguidos alternam o lado da nave; causam o dano cheio quando acertam e erram como os lasers
 {
   reset();
   const keep = [...save.mods], e = nearest('raider'), flying = () => shots.filter(q => q.missile);
   const wait = (n: number) => { for (let i = 0; i < n; i++) { park(e, 560); p.target = e; p.hp = 1e9; update(.016); } }; // de longe: os mísseis ficam mais de 1 s no ar
-  const press = () => { p.launch = true; wait(1); }, gap = Math.ceil(MISSILE_GAP / .016) + 1; // gap = quadros do intervalo mínimo
+  const press = (slot = 0) => { p.launch = slot; wait(1); }; // slot = qual dos mísseis equipados
   e.hp = 1e9; e.sh = e.t.sh; p.target = e;
   press();
-  assert(!flying().length && !p.launch && !p.mload.length, 'sem míssil equipado não lança');
+  assert(!flying().length && p.launch === null && !p.mis.length, 'sem míssil equipado não lança');
   save.mods.push('M1', 'A3'); assert.equal(best('missile'), 'M1'); assert.equal(best('laser'), 'L1'); // a Mira Mk3 garante o acerto
   const tot0 = e.hp + e.sh;
   press();
-  assert.deepEqual([flying().length, p.mload.filter(v => v > 0).length], [1, 1], 'um aperto, uma carga');
+  assert.deepEqual([flying().length, p.mis[0].n], [1, 0], 'um aperto, um míssil');
+  assert(Math.abs(p.mis[0].t - MISSILE_CD) < .05, 'a espera é a recarga inteira');
   press();
-  assert.equal(flying().length, 1, 'intervalo mínimo: o segundo aperto, colado no primeiro, não lança');
-  wait(gap); press();
-  assert.deepEqual([flying().length, p.mload.filter(v => v > 0).length], [2, 2], 'segunda carga');
-  // um de cada lado da nave: os pontos de saída são espelhados (o jogador aponta para o alvo, à esquerda dele no mapa)
-  const [a, b] = flying();
-  assert(a.hard[2] < 0 && b.hard[2] > 0 && a.lane! < 0 && b.lane! > 0, 'o primeiro sai da esquerda, o segundo da direita');
-  wait(gap); press();
-  assert.equal(flying().length, 2, 'sem carga pronta não lança');
+  assert.equal(flying().length, 1, 'recarregando: não lança de novo');
   for (let i = 0; i < 200 && flying().length; i++) wait(1);
-  assert.equal(e.hp + e.sh, tot0 - 2 * MODS.M1.val, 'os dois acertam com o dano cheio');
-  // recarga: cada carga volta sozinha, MISSILE_CD depois de gasta
-  for (let i = 0; i < (MISSILE_CD - 1.5) / .05; i++) { park(e, 300); update(.05); }
-  assert.equal(p.mload.filter(v => v <= 0).length, 0, 'ainda recarregando');
-  for (let i = 0; i < 2 / .05; i++) { park(e, 300); update(.05); }
-  assert.equal(p.mload.filter(v => v <= 0).length, 2, 'as duas cargas voltaram');
-  // dois módulos: quatro cargas, e as do melhor míssil saem primeiro
-  { const ship0 = save.ship; save.ship = 'cruiser'; save.mods.push('M2'); wait(gap); press();
-    assert.equal(p.mload.length, 4); assert.equal(flying()[0].mod, 'M2');
+  assert.equal(e.hp + e.sh, tot0 - MODS.M1.val, 'acerta com o dano cheio');
+  // recarga: volta MISSILE_CD segundos depois do lançamento
+  for (let i = 0; i < (MISSILE_CD - 3) / .05; i++) { park(e, 560); update(.05); }
+  assert.equal(p.mis[0].n, 0, 'ainda recarregando');
+  for (let i = 0; i < 3.2 / .05; i++) { park(e, 560); update(.05); }
+  assert.deepEqual([p.mis[0].n, p.mis[0].t], [1, 0], 'voltou');
+  // dois módulos: cada um é uma casa, com o míssil e a recarga dele; usar um não gasta o outro, e saem de lados opostos
+  { const ship0 = save.ship; save.ship = 'cruiser'; save.mods.push('M2'); press(1);
+    assert.equal(p.mis.length, 2); assert.equal(flying()[0].mod, 'M2');
+    assert.deepEqual(p.mis.map(c => c.n), [1, 0], 'só o segundo míssil foi gasto');
+    press(1); assert.equal(flying().length, 1, 'o segundo está recarregando');
+    press(0); assert.deepEqual(flying().map(q => q.mod), ['M2', 'M1'], 'o primeiro continuava pronto');
+    const [a, b] = flying();
+    assert(a.hard[2] * b.hard[2] < 0 && a.lane! * b.lane! < 0, 'lançamentos seguidos saem de lados opostos da nave');
+    press(5); assert.equal(flying().length, 2, 'casa sem míssil não lança');
     save.mods.splice(save.mods.indexOf('M2'), 1); save.ship = ship0; shots.length = 0; wait(1); }
   save.mods.pop(); // sem a mira: em 40 lançamentos, alguns erram e alguns acertam
   let hits = 0;
   for (let n = 0; n < 40; n++) {
-    e.hp = 1e9; const before = e.hp + e.sh; p.mcd = 0; p.mload.fill(0); p.launch = true; // vida + escudo: o acerto pode parar no escudo
+    e.hp = 1e9; const before = e.hp + e.sh; for (const c of p.mis) { c.n = MISSILE_CHARGES; c.t = 0; } p.launch = 0; // vida + escudo: o acerto pode parar no escudo
     for (let i = 0; i < 200 && (i < 2 || flying().length); i++) { park(e, 300); p.target = e; update(.016); }
     if (e.hp + e.sh < before) hits++;
   }
@@ -319,10 +319,10 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   p.x = p.tx = BASE.x + BASE.r + 20; p.y = p.ty = BASE.y; p.target = e; p.firing = true; // um passo fora da base
   for (let i = 0; i < 600 && e.hp + e.sh >= e.t.hp + e.t.sh; i++) { p.hp = Math.max(p.hp, 500); frames(1); } // atira até ferir o inimigo (uma salva inteira pode errar)
   assert(e.hp + e.sh < e.t.hp + e.t.sh && e.hostile && p.fight > COMBAT - 2, 'o combate começa ao atirar');
-  p.x = p.tx = BASE.x + BASE.r - 30; shots.length = 0; e.cd = 0; p.cd = 0; p.mcd = 0; // volta para dentro da base, ainda mirando e atirando
+  p.x = p.tx = BASE.x + BASE.r - 30; shots.length = 0; e.cd = 0; p.cd = 0; // volta para dentro da base, ainda mirando e atirando
   const hp0 = p.hp + p.sh, keepM = [...save.mods]; save.mods.push('M1');
   let fired = 0;
-  for (let i = 0; i < 200; i++) { p.hp = Math.max(p.hp, 500); p.launch = true; frames(1); fired += mine().length; } // ~3 s dentro da base, sem morrer
+  for (let i = 0; i < 200; i++) { p.hp = Math.max(p.hp, 500); p.launch = 0; frames(1); fired += mine().length; } // ~3 s dentro da base, sem morrer
   save.mods.length = 0; save.mods.push(...keepM);
   assert.equal(fired, 0, 'de dentro da base o jogador não atira nem lança mísseis, mesmo em combate');
   p.firing = false; p.target = null;

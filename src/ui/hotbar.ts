@@ -1,9 +1,9 @@
 // Barra de atalhos: 10 casas no rodapé (teclas 1..9 e 0). Clicar na casa ou apertar o número usa a casa.
-// Casa 1: canhões, de ligar e desligar (acesa em azul = atirando). Casa 2: mísseis, de acionar: cada clique lança, e uma
-// roda com os segundos mostra a recarga. Para criar outra, adicione uma entrada em SLOTS.
-import { MODS, MODEL_DIR, MISSILE_CD } from '../game/data.ts';
-import type { ModType } from '../game/data.ts';
-import { p, best } from '../game/state.ts';
+// Casa 1: canhões, de ligar e desligar (acesa em azul = atirando). Da casa 2 em diante, uma casa para cada míssil
+// equipado, na ordem em que estão na nave: cada uma lança o míssil dela, com as cargas e a recarga dela.
+import { MODS, MODEL_DIR, MISSILE_CD, MISSILE_CHARGES } from '../game/data.ts';
+import type { ModKey, ModType } from '../game/data.ts';
+import { p, best, save } from '../game/state.ts';
 import { iconOf } from '../view/ships3d.ts';
 
 interface Slot {
@@ -23,29 +23,32 @@ const CANNON = `<svg viewBox="0 0 32 32" width="30" height="30"><g transform="ro
   <rect x="3" y="11" width="13" height="10" rx="2" fill="#55627a"/>
   <rect x="15" y="14" width="13" height="4" fill="#aab8cc"/>
   <rect x="27" y="13" width="2" height="6" fill="#4cf"/></g></svg>`;
-// foto do melhor módulo equipado do tipo; sem módulo (ou enquanto o modelo não carrega), o desenho reserva
-const bestIcon = (type: ModType, fallback: string) => {
-  const k = best(type), m = k && MODS[k], u = m && m.model && iconOf(`${MODEL_DIR[type]}/${m.model}`);
-  return u ? `<img src="${u}" alt="">` : k ? fallback : '';
+// foto de um módulo; sem ele (ou enquanto o modelo não carrega), o desenho reserva
+const modIcon = (k: ModKey | undefined, fallback: string) => {
+  const m = k && MODS[k], u = m && m.model && iconOf(`${MODEL_DIR[m.type]}/${m.model}`);
+  return u ? `<img src="${u}" alt="">` : fallback;
 };
+const bestIcon = (type: ModType, fallback: string) => modIcon(best(type), fallback);
 
-const ready = () => p.mload.filter(v => v <= 0).length; // cargas de míssil prontas
-// casa i responde à tecla i+1 (a décima responde à tecla 0)
-const SLOTS: (Slot | undefined)[] = [
-  // acesa sempre que os lasers estão liberados para atirar: ligados aqui (ou no Espaço) ou pela mira automática (T)
-  {name: 'Canhões', icon: () => bestIcon('laser', CANNON) || CANNON, active: () => p.firing || p.auto, use: () => { p.firing = !p.firing; }},
-  // vazia = nenhum míssil equipado. O número no canto são as cargas prontas; sem nenhuma, a roda conta os segundos até a
-  // próxima voltar.
-  {name: 'Mísseis', icon: () => bestIcon('missile', CANNON), charges: () => p.mload.length ? ready() : null,
-   cooldown: () => [p.mload.length && !ready() ? Math.min(...p.mload) : 0, MISSILE_CD], use: () => { p.launch = true; }},
-];
+// As casas de agora: mudam quando o equipamento muda, por isso são montadas a cada uso. Casa i = tecla i+1 (a décima
+// responde à tecla 0).
+function slots(): Slot[] {
+  return [
+    // acesa sempre que os lasers estão liberados para atirar: ligados aqui (ou no Espaço) ou pela mira automática (T)
+    {name: 'Canhões', icon: () => bestIcon('laser', CANNON), active: () => p.firing || p.auto, use: () => { p.firing = !p.firing; }},
+    // um por míssil equipado: lançou, a roda conta os segundos até ele voltar
+    ...save.mods.filter(k => MODS[k].type === 'missile').slice(0, 9).map((k, j): Slot => {
+      // com mais de uma carga por míssil, o número no canto diz quantas estão prontas; com uma só, a roda basta
+      return {name: MODS[k].name, icon: () => modIcon(k, CANNON), charges: () => MISSILE_CHARGES > 1 ? p.mis[j]?.n ?? 0 : null,
+              cooldown: () => [p.mis[j]?.n === 0 ? p.mis[j].t : 0, MISSILE_CD],
+              use: () => { p.launch = j; }};
+    }),
+  ];
+}
 
 const el = document.createElement('div');
 el.id = 'hotbar';
-el.innerHTML = Array.from({length: 10}, (_, i) => {
-  const s = SLOTS[i];
-  return `<button data-i="${i}" tabindex="-1" ${s ? `title="${s.name}"` : 'disabled'}><i></i><b></b><em></em><span>${(i + 1) % 10}</span></button>`;
-}).join('');
+el.innerHTML = Array.from({length: 10}, (_, i) => `<button data-i="${i}" tabindex="-1" disabled><i></i><b></b><em></em><span>${(i + 1) % 10}</span></button>`).join('');
 document.body.append(el);
 
 // sem foco no botão: senão o Espaço "clicaria" nele de novo além de alternar os lasers
@@ -55,12 +58,15 @@ el.addEventListener('click', ev => {
   if (b?.dataset.i) useSlot(+b.dataset.i);
 });
 
-export function useSlot(i: number) { SLOTS[i]?.use(); }
+export function useSlot(i: number) { slots()[i]?.use(); }
 
-// chamado a cada quadro: acende as casas ligadas, troca o ícone quando o equipamento muda e gira a roda de recarga
-const lit: boolean[] = [], shown: string[] = [], wheel: string[] = [], count: (number | null)[] = [];
+// chamado a cada quadro: liga e desliga as casas conforme o equipamento, acende as ligadas, troca ícones e gira a roda
+const lit: boolean[] = [], shown: string[] = [], wheel: string[] = [], count: (number | null)[] = [], named: string[] = [];
 export function syncHotbar() {
-  SLOTS.forEach((s, i) => {
+  const now = slots();
+  for (let i = 0; i < 10; i++) {
+    const s: Slot | undefined = now[i], name = s?.name ?? '';
+    if (name !== named[i]) { named[i] = name; const b = el.children[i] as HTMLButtonElement; b.disabled = !s; b.title = name; }
     const on = !!s?.active?.(), icon = s?.icon() ?? '', [left, total] = s?.cooldown?.() ?? [0, 1];
     const cd = left > 0 ? `${Math.round(left / total * 360)}|${Math.ceil(left)}` : ''; // ângulo da roda | segundos
     if (on !== lit[i]) { lit[i] = on; el.children[i].classList.toggle('on', on); }
@@ -72,5 +78,5 @@ export function syncHotbar() {
       const b = el.children[i].querySelector('b')!, [deg, secs] = cd.split('|');
       b.textContent = secs ?? ''; b.style.background = cd ? `conic-gradient(#000c ${deg}deg, #0000 0)` : '';
     }
-  });
+  }
 }

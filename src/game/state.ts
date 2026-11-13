@@ -44,13 +44,11 @@ export interface Player extends Body {
   firing: boolean; auto: boolean;
   /** quando atirou pela última vez (relógio do jogo), e quantos segundos de combate ainda restam (0 = fora de combate) */
   lastShot: number; fight: number;
-  /** pedido de lançar os mísseis (barra de atalhos); a simulação atende e apaga */
-  launch: boolean;
-  /** tempo até poder lançar outro míssil (intervalo mínimo entre lançamentos) */
-  mcd: number;
-  /** cargas de míssil: segundos até cada uma voltar (0 = pronta); MISSILE_CHARGES por módulo equipado, na ordem dos
-   *  módulos do melhor para o pior. mleft = o próximo míssil sai do lado esquerdo da nave. */
-  mload: number[]; mleft: boolean;
+  /** pedido de lançar um míssil (barra de atalhos): qual dos mísseis equipados, 0 = o primeiro; a simulação atende e apaga */
+  launch: number | null;
+  /** um por míssil equipado, na ordem em que estão na nave: n = cargas prontas, t = segundos até a próxima voltar.
+   *  mleft = o próximo míssil sai do lado esquerdo da nave. */
+  mis: { n: number; t: number }[]; mleft: boolean;
   /** asteroide escolhido para minerar (clique), e se o feixe está ligado neste quadro */
   mining: Rock | null; beam: boolean;
   deaths: number;
@@ -149,7 +147,7 @@ export const map = (): MapDef => MAPS[world.map];
 
 const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
-                          target: null, firing: false, auto: false, launch: false, mcd: 0, mload: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
+                          target: null, firing: false, auto: false, launch: null, mis: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
 export const rocks: Rock[] = [];
 /** Troca o progresso atual pelo que veio de fora (o da conta, ao entrar) e conserta a nave para ele; false se não serve.
  *  Grava no navegador, mas não avisa onPersist: o servidor acabou de mandar esse mesmo progresso. */

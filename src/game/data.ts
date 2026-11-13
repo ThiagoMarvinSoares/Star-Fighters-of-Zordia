@@ -5,10 +5,10 @@ export const STATION_R = 130;
 export const RANGE = 600, SHOT_SPEED = 1100;
 /** chance de um tiro do jogador (laser ou míssil) acertar sem computador de mira (0 a 1); os módulos de mira somam pontos percentuais */
 export const ACCURACY = .75;
-/** Mísseis: cada módulo equipado tem MISSILE_CHARGES cargas. Cada aperto lança uma, alternando o lado da nave (esquerda,
- *  direita), e cada carga gasta volta sozinha em MISSILE_CD segundos. MISSILE_GAP = intervalo mínimo entre dois
- *  lançamentos (segurar a tecla não esvazia tudo num instante). Voam bem mais devagar que o laser e erram como ele. */
-export const MISSILE_CHARGES = 2, MISSILE_CD = 6, MISSILE_GAP = .25, MISSILE_SPEED = 450;
+/** Mísseis: cada módulo equipado é uma casa da barra de atalhos e é um míssil (MISSILE_CHARGES = 1): apertou, lançou, e
+ *  ele volta MISSILE_CD segundos depois. Quem quer dois mísseis equipa dois módulos. Os lançamentos alternam o lado da
+ *  nave (esquerda, direita). Voam bem mais devagar que o laser e erram como ele. */
+export const MISSILE_CHARGES = 1, MISSILE_CD = 5, MISSILE_SPEED = 450;
 /** raio do míssil em voo, na escala das naves: o modelo mede 3x isso de comprimento, com o centro na posição do tiro */
 export const MISSILE_R = 11;
 /** inimigos ficam a esta distância além da zona segura de uma base: com folga, e nunca voam por cima dela */

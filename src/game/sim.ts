@@ -1,5 +1,5 @@
 // Simulação: as regras do jogo. Só altera o estado; não sabe nada de canvas, tela nem teclado.
-import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_GAP, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, PORTAL_R, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
+import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, PORTAL_R, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
 import type { EnemyDef, MapDef, MapKey } from './data.ts';
 import type { ModelKey, ModKey } from './data.ts';
 import { save, persist, stats, cargoUsed, p, enemies, rocks, shots, texts, parts, events, world, map } from './state.ts';
@@ -204,20 +204,20 @@ export function update(dt: number) {
   if (was && !p.beam) persist();
 
   // ---------- mísseis ----------
-  // Cada módulo equipado tem MISSILE_CHARGES cargas, e cada carga gasta volta sozinha em MISSILE_CD segundos. Um aperto
-  // (barra de atalhos) lança uma carga contra o alvo travado, a do melhor míssil que tiver uma pronta, alternando o lado
-  // da nave: esquerda, direita. Erram como os lasers.
-  const ms = save.mods.filter(m => MODS[m].type === 'missile').sort((a, b) => MODS[b].val - MODS[a].val);
-  while (p.mload.length < ms.length * MISSILE_CHARGES) p.mload.push(0); // módulo recém-equipado: cargas prontas
-  p.mload.length = ms.length * MISSILE_CHARGES;
-  for (let i = 0; i < p.mload.length; i++) p.mload[i] = Math.max(0, p.mload[i] - dt);
-  p.mcd -= dt;
-  if (p.launch) {
-    p.launch = false;
-    const c = p.mload.indexOf(0);
-    if (t && p.target === t && !inBase && c >= 0 && p.mcd <= 0 && dist(p, t) <= RANGE) {
-      const m = ms[Math.floor(c / MISSILE_CHARGES)], left = p.mleft;
-      p.mload[c] = MISSILE_CD; p.mcd = MISSILE_GAP; p.mleft = !left; t.hostile = true; p.lastShot = now;
+  // Cada míssil equipado é independente: tem as MISSILE_CHARGES cargas dele. A recarga devolve uma carga por vez e dura
+  // sempre MISSILE_CD segundos inteiros, contados do último lançamento daquele míssil: lançar de novo reinicia a contagem.
+  // Um aperto na casa dele (barra de atalhos) lança uma carga contra o alvo travado, alternando o lado da nave: esquerda,
+  // direita. Erram como os lasers.
+  const ms = save.mods.filter(m => MODS[m].type === 'missile'); // na ordem da nave: o míssil j é a casa j dos mísseis
+  while (p.mis.length < ms.length) p.mis.push({n: MISSILE_CHARGES, t: 0}); // módulo recém-equipado: cargas prontas
+  p.mis.length = ms.length;
+  for (const c of p.mis) if (c.n < MISSILE_CHARGES && (c.t -= dt) <= 0) { c.n++; c.t = c.n < MISSILE_CHARGES ? MISSILE_CD : 0; }
+  if (p.launch !== null) {
+    const m = ms[p.launch], c = p.mis[p.launch];
+    p.launch = null;
+    if (m && c && c.n > 0 && t && p.target === t && !inBase && dist(p, t) <= RANGE) {
+      const left = p.mleft;
+      c.n--; c.t = MISSILE_CD; p.mleft = !left; t.hostile = true; p.lastShot = now;
       // ponto de fixação 1 = lado esquerdo da nave, 0 = direito (os pares de HARD são espelhados); a faixa de voo
       // acompanha o lado, para dois mísseis seguidos irem lado a lado e não em fila
       shoot(p, st.r, save.ship, left ? 1 : 0, t, MODS[m].val, '#fa4', 0, m, rand() >= st.acc, true, (left ? -1 : 1) * LANE / 2);
@@ -301,7 +301,7 @@ export function update(dt: number) {
     explode(p, st.r); shots.length = 0;
     const SPAWN = MAPS[HOME].spawn; // renasce sempre na base do mapa inicial, esteja onde estiver
     if (world.map !== HOME) travel(HOME, SPAWN.x, SPAWN.y);
-    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, launch: false, mload: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
+    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, launch: null, mis: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
     p.deaths++; // input.ts usa isso para soltar o botão do mouse
     enemies.forEach(calm);
     float(p, 'Nave destruída — reparada na base', '#fff', 3);
