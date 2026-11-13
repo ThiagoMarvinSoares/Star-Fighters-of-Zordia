@@ -29,7 +29,7 @@ const put = (e: Enemy, x: number, y: number) => { e.x = e.wx = e.hx = x; e.y = e
 // Começo de cada bloco que roda a simulação: o jogador volta a um estado conhecido (parado onde está, inteiro, sem
 // alvo, armas e feixe desligados) e somem tiros, partículas e perseguições deixados pelo bloco anterior.
 const reset = () => {
-  Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: null, mining: null, beam: false, cd: 0, mis: [], mleft: true, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
+  Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: null, multi: false, extra: [], mining: null, beam: false, cd: 0, mis: [], mleft: true, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
   shots.length = 0; parts.length = 0;
   for (const e of enemies) e.hostile = false;
 };
@@ -85,7 +85,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
 // alcance: nunca espera mais de 8 minutos por uma compra, e a 1ª é imediata. (Ele não fica parado juntando para um item
 // caro, como o Míssil Mk4, enquanto há melhoria mais barata disponível.)
 {
-  type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[] };
+  type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[]; chip: ModKey[] };
   const ships = keys(SHIPS), sum = (l: ModKey[]) => l.reduce((a, m) => a + MODS[m].val, 0);
   const income = (k: Kit) => { // créditos por minuto
     const dps = (sum(k.laser) + sum(k.missile) / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
@@ -110,7 +110,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
     return out;
   };
   const byType = (t: string) => START.mods.filter(m => MODS[m].type === t);
-  let kit: Kit = {ship: START.ship, laser: byType('laser'), shield: byType('shield'), engine: byType('engine'), aim: byType('aim'), missile: byType('missile'), mining: byType('mining')}, bank: number = START.credits, worst = 0, n = 0;
+  let kit: Kit = {ship: START.ship, laser: byType('laser'), shield: byType('shield'), engine: byType('engine'), aim: byType('aim'), missile: byType('missile'), mining: byType('mining'), chip: byType('chip')}, bank: number = START.credits, worst = 0, n = 0;
   for (let opts = options(kit); opts.length; opts = options(kit), n++) {
     const inc = income(kit), ehp = (k: Kit) => SHIPS[k.ship].hp + sum(k.shield);
     const waitFor = (cost: number) => Math.max(0, cost - bank) / inc;
@@ -182,8 +182,8 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   e.hp = e.t.hp; p.hp = stats().maxHp; p.firing = false; p.target = null; shots.length = 0;
 }
 
-// mísseis: cada módulo equipado é uma casa e um míssil; um aperto lança, contra o alvo travado, e ele volta depois de
-// MISSILE_CD; lançamentos seguidos alternam o lado da nave; causam o dano cheio quando acertam e erram como os lasers
+// mísseis: cada módulo equipado é uma casa com 2 cargas só dele; um aperto lança uma, contra o alvo travado, alternando
+// esquerda e direita; a recarga devolve uma carga por vez; causam o dano cheio quando acertam e erram como os lasers
 {
   reset();
   const keep = [...save.mods], e = nearest('raider'), flying = () => shots.filter(q => q.missile);
@@ -195,26 +195,29 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   save.mods.push('M1', 'A3'); assert.equal(best('missile'), 'M1'); assert.equal(best('laser'), 'L1'); // a Mira Mk3 garante o acerto
   const tot0 = e.hp + e.sh;
   press();
-  assert.deepEqual([flying().length, p.mis[0].n], [1, 0], 'um aperto, um míssil');
-  assert(Math.abs(p.mis[0].t - MISSILE_CD) < .05, 'a espera é a recarga inteira');
+  assert.deepEqual([flying().length, p.mis[0].n], [1, 1], 'um aperto, uma carga');
   press();
-  assert.equal(flying().length, 1, 'recarregando: não lança de novo');
+  assert.deepEqual([flying().length, p.mis[0].n], [2, 0], 'segunda carga');
+  assert(Math.abs(p.mis[0].t - MISSILE_CD) < .05, 'usada a última carga, a espera é a recarga inteira, não o que sobrava da primeira');
+  { const [a, b] = flying(); assert(a.hard[2] < 0 && b.hard[2] > 0 && a.lane! < 0 && b.lane! > 0, 'o primeiro sai da esquerda, o segundo da direita'); }
+  press();
+  assert.equal(flying().length, 2, 'sem carga pronta não lança');
   for (let i = 0; i < 200 && flying().length; i++) wait(1);
-  assert.equal(e.hp + e.sh, tot0 - MODS.M1.val, 'acerta com o dano cheio');
-  // recarga: volta MISSILE_CD segundos depois do lançamento
+  assert.equal(e.hp + e.sh, tot0 - 2 * MODS.M1.val, 'os dois acertam com o dano cheio');
+  // recarga: uma carga por vez, MISSILE_CD segundos cada, contados do último lançamento
   for (let i = 0; i < (MISSILE_CD - 3) / .05; i++) { park(e, 560); update(.05); }
   assert.equal(p.mis[0].n, 0, 'ainda recarregando');
   for (let i = 0; i < 3.2 / .05; i++) { park(e, 560); update(.05); }
-  assert.deepEqual([p.mis[0].n, p.mis[0].t], [1, 0], 'voltou');
-  // dois módulos: cada um é uma casa, com o míssil e a recarga dele; usar um não gasta o outro, e saem de lados opostos
+  assert.equal(p.mis[0].n, 1, 'voltou a primeira carga');
+  for (let i = 0; i < (MISSILE_CD + .5) / .05; i++) { park(e, 560); update(.05); }
+  assert.deepEqual([p.mis[0].n, p.mis[0].t], [2, 0], 'e depois a segunda');
+  // dois módulos: cada um é uma casa, com as cargas e a recarga dele; usar um não gasta o outro
   { const ship0 = save.ship; save.ship = 'cruiser'; save.mods.push('M2'); press(1);
     assert.equal(p.mis.length, 2); assert.equal(flying()[0].mod, 'M2');
-    assert.deepEqual(p.mis.map(c => c.n), [1, 0], 'só o segundo míssil foi gasto');
-    press(1); assert.equal(flying().length, 1, 'o segundo está recarregando');
-    press(0); assert.deepEqual(flying().map(q => q.mod), ['M2', 'M1'], 'o primeiro continuava pronto');
-    const [a, b] = flying();
-    assert(a.hard[2] * b.hard[2] < 0 && a.lane! * b.lane! < 0, 'lançamentos seguidos saem de lados opostos da nave');
-    press(5); assert.equal(flying().length, 2, 'casa sem míssil não lança');
+    assert.deepEqual(p.mis.map(c => c.n), [2, 1], 'só o segundo míssil gastou uma carga');
+    press(1); press(1); press(0);
+    assert.deepEqual(flying().map(q => q.mod), ['M2', 'M2', 'M1'], 'o segundo esgota sozinho; o primeiro segue pronto');
+    press(5); assert.equal(flying().length, 3, 'casa sem míssil não lança');
     save.mods.splice(save.mods.indexOf('M2'), 1); save.ship = ship0; shots.length = 0; wait(1); }
   save.mods.pop(); // sem a mira: em 40 lançamentos, alguns erram e alguns acertam
   let hits = 0;
@@ -293,19 +296,49 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   p.tx = p.x; p.ty = p.y;
 }
 
+// múltiplos alvos: com o chip equipado e ligado, os lasers se dividem entre o alvo travado e até 2 inimigos ao alcance;
+// desligado ou sem chip, todos os tiros vão no alvo travado
+{
+  reset();
+  const keep = [...save.mods], all = [...enemies], [a, b, c, d] = enemies.filter(e => e.t === ENEMIES[0]);
+  enemies.length = 0; enemies.push(a, b, c, d); // só estes quatro no mapa durante o bloco (os de reposição nascem longe)
+  save.mods.length = 0; save.mods.push('L1', 'L1', 'L1', 'A3');
+  const volley = () => { shots.length = 0; p.cd = 0; p.x = p.tx = a.x + 150; p.y = p.ty = a.y; p.target = a; p.firing = true; p.hp = 1e9; update(.016); return mine().map(q => q.tgt); };
+  put(b, a.x + 300, a.y + 100); put(c, a.x + 300, a.y - 100); put(d, a.x + 150, a.y + 400); // b e c mais perto do jogador que d
+  for (const e of [a, b, c, d]) { e.hp = 1e9; e.hostile = false; }
+  p.multi = true;
+  assert.deepEqual(volley(), [a, a, a], 'sem o chip, ligar não muda nada');
+  save.mods.push('C1'); assert.equal(stats().multi, 2);
+  p.multi = false;
+  assert.deepEqual(volley(), [a, a, a], 'chip equipado mas desligado: foco no alvo travado');
+  p.multi = true;
+  const got = volley();
+  assert(got[0] === a && new Set(got).size === 3 && got.includes(b) && got.includes(c) && !got.includes(d), 'ligado: principal mais os dois mais próximos');
+  assert(b.hostile && c.hostile && p.extra.length === 2, 'os alvos extras passam a reagir');
+  put(c, a.x + 5000, a.y); put(d, a.x + 5000, a.y + 300); b.hostile = false;
+  assert.deepEqual(volley(), [a, b, a], 'com um só extra ao alcance, os lasers se revezam entre os dois');
+  p.multi = false; p.firing = false; p.target = null; shots.length = 0;
+  enemies.length = 0; enemies.push(...all); // de volta os de antes, sem os que nasceram durante o bloco
+  for (const e of [a, b, c, d]) { e.hp = e.t.hp; e.hostile = false; }
+  put(b, b.hx - 300 + 0, b.hy); put(c, c.hx - 5000 + 0, c.hy); put(d, d.hx - 5000, d.hy - 300);
+  save.mods.length = 0; save.mods.push(...keep);
+}
+
 // o bico da nave aponta para o alvo enquanto ela o ataca, mesmo voando para outro lado; sem atacar, aponta para onde vai
 {
   reset();
-  const e = nearest('drone'), aim = () => Math.atan2(e.y - p.y, e.x - p.x), near = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 1e-9;
-  p.x = e.x - 200; p.y = e.y + 150; p.tx = p.x; p.ty = p.y + 5000; p.target = e; e.hp = 1e9; // alvo para cima e à direita; a nave voa para baixo
+  const e = nearest('drone'), aim = () => Math.atan2(e.y - p.y, e.x - p.x), near = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 1e-6;
+  const fly = () => Math.atan2(p.ty - p.y, p.tx - p.x); // direção do voo: rumo ao meio do mapa, longe de qualquer borda
+  p.x = e.x + (e.x < M.w / 2 ? 200 : -200); p.y = e.y + (e.y < M.h / 2 ? 150 : -150); // ao lado do alvo, do lado de dentro do mapa
+  p.tx = M.w / 2; p.ty = M.h / 2; p.target = e; e.hp = 1e9;
   frames(1);
-  assert(near(p.a, Math.PI / 2) && !near(p.a, aim()), 'lasers desligados: aponta para onde voa');
+  assert(near(p.a, fly()) && !near(p.a, aim()), 'lasers desligados: aponta para onde voa');
   p.firing = true; frames(3);
   assert(near(p.a, aim()), 'atacando: aponta para o alvo');
   const flames = parts.filter(q => q.a !== undefined && q.c === stats().flame).slice(-ENGINES[save.ship].length); // as do jogador, pela cor do motor
   assert(flames.length && flames.every(q => near(q.a!, p.a)), 'a chama acompanha para onde a nave está virada');
   p.firing = false; frames(1);
-  assert(near(p.a, Math.PI / 2), 'parou de atacar: volta a apontar para onde voa');
+  assert(near(p.a, fly()), 'parou de atacar: volta a apontar para onde voa');
   e.hp = e.t.hp; p.tx = p.x; p.ty = p.y;
 }
 
@@ -571,7 +604,7 @@ for (const k of keys(MAPS)) for (const g of MAPS[k].portals) {
 }
 // todo .glb da biblioteca abre e encaixa: naves medindo 2; armas com .46 de cano, para a frente e em pé;
 // escudos e motores (só ícones) com .2 de lado e em pé
-const FOLDERS = {ships: 'ship', weapons: 'weapon', shields: 'module', engines: 'module', aim: 'module', missiles: 'module', asteroids: 'rock', bases: 'base'} as const;
+const FOLDERS = {ships: 'ship', weapons: 'weapon', shields: 'module', engines: 'module', aim: 'module', missiles: 'module', chips: 'module', asteroids: 'rock', bases: 'base'} as const;
 // fora do navegador não há como decodificar imagens: um substituto basta para os modelos com textura abrirem
 Object.assign(globalThis, {self: globalThis, createImageBitmap: async () => ({width: 1, height: 1, close() {}})});
 for (const dir of keys(FOLDERS)) for (const f of readdirSync(`public/models/${dir}`).filter(f => f.endsWith('.glb'))) {

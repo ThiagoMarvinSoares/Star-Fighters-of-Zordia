@@ -5,10 +5,10 @@ export const STATION_R = 130;
 export const RANGE = 600, SHOT_SPEED = 1100;
 /** chance de um tiro do jogador (laser ou míssil) acertar sem computador de mira (0 a 1); os módulos de mira somam pontos percentuais */
 export const ACCURACY = .75;
-/** Mísseis: cada módulo equipado é uma casa da barra de atalhos e é um míssil (MISSILE_CHARGES = 1): apertou, lançou, e
- *  ele volta MISSILE_CD segundos depois. Quem quer dois mísseis equipa dois módulos. Os lançamentos alternam o lado da
- *  nave (esquerda, direita). Voam bem mais devagar que o laser e erram como ele. */
-export const MISSILE_CHARGES = 1, MISSILE_CD = 5, MISSILE_SPEED = 450;
+/** Mísseis: cada módulo equipado é uma casa da barra de atalhos, com MISSILE_CHARGES cargas só dele. Cada aperto lança
+ *  uma, alternando o lado da nave (esquerda, direita). A recarga é sempre de MISSILE_CD segundos inteiros, contados do
+ *  último lançamento daquele míssil, e devolve uma carga por vez. Voam bem mais devagar que o laser e erram como ele. */
+export const MISSILE_CHARGES = 2, MISSILE_CD = 5, MISSILE_SPEED = 450;
 /** raio do míssil em voo, na escala das naves: o modelo mede 3x isso de comprimento, com o centro na posição do tiro */
 export const MISSILE_R = 11;
 /** inimigos ficam a esta distância além da zona segura de uma base: com folga, e nunca voam por cima dela */
@@ -24,9 +24,9 @@ export const LEASH = 1300;
 /** inimigos não renascem a menos disto do jogador: a área que ele limpou fica vazia enquanto ele estiver nela */
 export const CLEAR = 1400;
 
-export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining';
+export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip';
 export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor';
-export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3';
+export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1';
 export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss';
 /** Toda nave ou inimigo precisa de um modelo 3D e pontos de tiro com esta chave em models.ts. */
 export type ModelKey = ShipKey | EnemyKey | 'station';
@@ -67,11 +67,11 @@ export interface EnemyDef {
 // Corvette, Mk3 do Cruiser. Ao mexer nos números, confira a espera entre compras (o teste mede a maior delas).
 export const START = {credits: 300, ship: 'scout', mods: ['L1', 'L1', 'S1']} as const; // sobra um slot de arma: a 1ª compra é imediata
 export const SHIPS: Record<ShipKey, ShipDef> = {
-  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
-  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
-  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
-  // tier 4: os mesmos slots e a mesma vida do Cruiser, bem mais rápida
-  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
+  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 1}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
+  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 1}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
+  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
+  // tier 4: a vida do Cruiser, bem mais rápida, com um escudo e um míssil a mais que ele
+  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
 };
 export const MODS: Record<ModKey, ModDef> = {
   L1: {name: 'Laser Mk1',  type: 'laser',  val: 25,   cost: 300,  model: 'mp1'},
@@ -96,23 +96,27 @@ export const MODS: Record<ModKey, ModDef> = {
   D1: {name: 'Minerador Mk1', type: 'mining', val: 3,  cost: 500,  level: 1},
   D2: {name: 'Minerador Mk2', type: 'mining', val: 7,  cost: 2500, level: 2},
   D3: {name: 'Minerador Mk3', type: 'mining', val: 15, cost: 8000, level: 3},
+  // chip de múltiplos alvos: val = quantos alvos além do principal. Ligado na barra de atalhos, os lasers se dividem
+  // entre o alvo travado e os inimigos mais próximos ao alcance; desligado, todos focam o alvo travado.
+  C1: {name: 'Chip Multialvo', type: 'chip', val: 2, cost: 4000, model: 'chip1'},
 };
 /** pasta de cada tipo de módulo dentro de public/models/ */
-export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining'};
+export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining', chip: 'chips'};
 /** o que o valor do módulo soma; vem colado ao número: "+25 de dano", "+7% de precisão" */
-export const LABEL: Record<ModType, string> = {laser: ' de dano', shield: ' de escudo', engine: ' de velocidade', aim: '% de precisão', missile: ' de dano por míssil', mining: ' de minério por segundo'};
+export const LABEL: Record<ModType, string> = {laser: ' de dano', shield: ' de escudo', engine: ' de velocidade', aim: '% de precisão', missile: ' de dano por míssil', mining: ' de minério por segundo', chip: ' alvos além do principal'};
 /** nome do tipo de slot, no plural e no singular ("3 armas", "1 arma") */
-export const SLOT: Record<ModType, string> = {laser: 'armas', shield: 'escudos', engine: 'motores', aim: 'miras', missile: 'mísseis', mining: 'mineradores'};
-export const SLOT_ONE: Record<ModType, string> = {laser: 'arma', shield: 'escudo', engine: 'motor', aim: 'mira', missile: 'míssil', mining: 'minerador'};
+export const SLOT: Record<ModType, string> = {laser: 'armas', shield: 'escudos', engine: 'motores', aim: 'miras', missile: 'mísseis', mining: 'mineradores', chip: 'chips'};
+export const SLOT_ONE: Record<ModType, string> = {laser: 'arma', shield: 'escudo', engine: 'motor', aim: 'mira', missile: 'míssil', mining: 'minerador', chip: 'chip'};
 
 // Do mais fraco ao mais forte; quanto mais longe da base, mais alto na lista o inimigo que nasce.
+// Os quatro primeiros caem rápido, para o combate do dia a dia ser ágil; os Dreadnoughts é que são a luta demorada.
 // key = modelo 3D (as variantes Alfa, Elite e Prime usam o mesmo modelo, maior). A recompensa cresce menos que a
 // vida: inimigo forte paga mais no total, mas um pouco menos por ponto de vida.
 export const ENEMIES: EnemyDef[] = [
-  {key: 'drone',       name: 'Drone',             hp: 300,   sh: 150,   dmg: 12,  speed: 170, reward: 120,  r: 14, color: '#ff8844', aggro: false, organic: true},
-  {key: 'drone',       name: 'Drone Alfa',        hp: 700,   sh: 350,   dmg: 22,  speed: 180, reward: 260,  r: 19, color: '#ffbb44', aggro: false, organic: true},
-  {key: 'raider',      name: 'Raider',            hp: 1500,  sh: 900,   dmg: 45,  speed: 200, reward: 550,  r: 20, color: '#ff4444', aggro: true},
-  {key: 'raider',      name: 'Raider Elite',      hp: 3200,  sh: 2000,  dmg: 85,  speed: 210, reward: 1100, r: 25, color: '#ff44aa', aggro: true},
+  {key: 'drone',       name: 'Drone',             hp: 150,   sh: 75,    dmg: 12,  speed: 170, reward: 120,  r: 14, color: '#ff8844', aggro: false, organic: true},
+  {key: 'drone',       name: 'Drone Alfa',        hp: 350,   sh: 175,   dmg: 22,  speed: 180, reward: 260,  r: 19, color: '#ffbb44', aggro: false, organic: true},
+  {key: 'raider',      name: 'Raider',            hp: 750,   sh: 450,   dmg: 45,  speed: 200, reward: 550,  r: 20, color: '#ff4444', aggro: true},
+  {key: 'raider',      name: 'Raider Elite',      hp: 1600,  sh: 1000,  dmg: 85,  speed: 210, reward: 1100, r: 25, color: '#ff44aa', aggro: true},
   {key: 'dreadnought', name: 'Dreadnought',       hp: 7500,  sh: 5000,  dmg: 160, speed: 120, reward: 2400, r: 34, color: '#cc44ff', aggro: true},
   {key: 'dreadnought', name: 'Dreadnought Prime', hp: 16000, sh: 11000, dmg: 450, speed: 110, reward: 4800, r: 44, color: '#8844ff', aggro: true},
 ];

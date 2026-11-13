@@ -39,6 +39,7 @@ canvas{display:block;cursor:crosshair}
 #shop .t-aim{--k:#7dffa0}
 #shop .t-missile{--k:#ff6a6a}
 #shop .t-mining{--k:#ffd45a}
+#shop .t-chip{--k:#ff7ad9}
 /* pack de minério no inventário: quantidade no canto da casa */
 #shop .cell.ore{position:relative}
 #shop .cell.ore em{position:absolute;right:3px;bottom:1px;font-size:11px;font-weight:700;color:#fff;text-shadow:0 0 3px #000,0 0 2px #000}

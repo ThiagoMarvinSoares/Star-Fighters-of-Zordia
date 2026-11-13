@@ -179,6 +179,9 @@ export function draw() {
   if (p.target) {
     ctx.strokeStyle = 'rgba(255,255,255,.08)'; ring(p, RANGE); ctx.stroke();
     ctx.strokeStyle = '#f33'; ring(p.target, p.target.t.r * SCALE + 8); ctx.stroke();
+    ctx.strokeStyle = '#ff7ad9'; ctx.setLineDash([6, 5]); // alvos extras do chip de múltiplos alvos: anel tracejado
+    for (const e of p.extra) { ring(e, e.t.r * SCALE + 8); ctx.stroke(); }
+    ctx.setLineDash([]);
   }
   const vis = enemies.filter(e => onScreen(e, Math.max(60, e.t.r * 2)));
   for (const e of vis) seen.add(e);

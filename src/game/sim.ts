@@ -171,16 +171,24 @@ export function update(dt: number) {
     for (const e of enemies) { const d = dist(p, e); if (d <= best) { best = d; p.target = e; } }
   }
   const t = p.target;
+  p.extra = [];
   if (t) {
     const td = dist(p, t);
     if (td > 1500) p.target = null;
     // atacando (lasers liberados e alvo ao alcance): o bico da nave aponta para o alvo, mesmo voando para outro lado
     else if (!inBase && (p.firing || p.auto) && td <= RANGE && st.dmg) p.a = Math.atan2(t.y - p.y, t.x - p.x);
+    // Múltiplos alvos (chip equipado e ligado na barra): além do alvo travado, até st.multi inimigos ao alcance, primeiro
+    // os que já estão atacando o jogador, depois os mais próximos. Fica em p.extra para o desenho marcar.
+    if (p.target && p.multi && st.multi && !inBase && td <= RANGE)
+      p.extra = enemies.filter(e => e !== t && dist(p, e) <= RANGE).sort((a, b) => +b.hostile - +a.hostile || dist(p, a) - dist(p, b)).slice(0, st.multi);
     if (p.target && !inBase && (p.firing || p.auto) && td <= RANGE && p.cd <= 0 && st.dmg) {
-      p.cd = 1; t.hostile = true; p.lastShot = now;
-      // um tiro por módulo de laser, cada um saindo do seu ponto de fixação e com o dano do seu módulo
+      p.cd = 1; p.lastShot = now;
+      // um tiro por módulo de laser, cada um saindo do seu ponto de fixação e com o dano do seu módulo; com múltiplos
+      // alvos, os lasers se revezam entre eles (o laser 0 no principal, o 1 no primeiro extra, e assim por diante)
+      const tgts = [t, ...p.extra];
+      for (const e of tgts) e.hostile = true;
       save.mods.filter(m => MODS[m].type === 'laser').forEach((m, i, l) =>
-        shoot(p, st.r, save.ship, i, t, Math.round(MODS[m].val * rnd(.85, 1.15)), '#4cf', i / l.length, m, rand() >= st.acc));
+        shoot(p, st.r, save.ship, i, tgts[i % tgts.length], Math.round(MODS[m].val * rnd(.85, 1.15)), '#4cf', i / l.length, m, rand() >= st.acc));
     }
   }
 
@@ -307,7 +315,7 @@ export function update(dt: number) {
     explode(p, st.r); shots.length = 0;
     const SPAWN = MAPS[HOME].spawn; // renasce sempre na base do mapa inicial, esteja onde estiver
     if (world.map !== HOME) travel(HOME, SPAWN.x, SPAWN.y);
-    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, launch: null, mis: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
+    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
     p.deaths++; // input.ts usa isso para soltar o botão do mouse
     enemies.forEach(calm);
     float(p, 'Nave destruída — reparada na base', '#fff', 3);

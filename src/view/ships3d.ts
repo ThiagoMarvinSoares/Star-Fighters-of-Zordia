@@ -41,7 +41,7 @@ const PLACEHOLDER = new THREE.Mesh(new THREE.ConeGeometry(.45, 2, 5).rotateZ(-Ma
 //    brilho próprio são mantidos. Em modelos só com cor por vértice, peças com glow, light, illuminated, reticle, emitter, energy,
 //    beacon, window ou track no nome brilham.
 export type ModelKind = 'ship' | 'weapon' | 'module' | 'base' | 'rock';
-const KIND: Record<string, ModelKind> = {ships: 'ship', weapons: 'weapon', shields: 'module', engines: 'module', aim: 'module', missiles: 'module', asteroids: 'rock', bases: 'base'}; // pasta -> tipo
+const KIND: Record<string, ModelKind> = {ships: 'ship', weapons: 'weapon', shields: 'module', engines: 'module', aim: 'module', missiles: 'module', chips: 'module', asteroids: 'rock', bases: 'base'}; // pasta -> tipo
 // modelos que não ficam em ships/<chave>.glb
 const PATH: Partial<Record<ModelKey, string>> = {station: 'bases/base_anel'};
 // bases grossas, que esconderiam as naves ao cruzar: ficam inteiras abaixo do plano de voo e as naves passam por cima

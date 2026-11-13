@@ -39,7 +39,7 @@ const I = {
   box: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8',
 };
 const svg = (d: string) => `<svg viewBox="0 0 24 24"><path d="${d}"/></svg>`;
-const ICON: Record<ModType, string> = {laser: I.laser, shield: I.shield, engine: I.engine, aim: I.target, missile: I.missile, mining: I.mining};
+const ICON: Record<ModType, string> = {laser: I.laser, shield: I.shield, engine: I.engine, aim: I.target, missile: I.missile, mining: I.mining, chip: I.chip};
 // ícone de um módulo: a foto do modelo 3D dele; enquanto o .glb não carrega (ou se não existe), o desenho do tipo
 const pic = (k: ModKey) => { const m = MODS[k], u = m.model && iconOf(`${MODEL_DIR[m.type]}/${m.model}`); return u ? `<img src="${u}" alt="">` : svg(ICON[m.type]); };
 
@@ -58,7 +58,7 @@ let cat: ModType = 'laser', pick: ModKey = 'L1'; // aba Loja: categoria aberta e
 type From = 'mods' | 'inv';
 let sel: { from: From; i: number } | null = null;
 let lastClick = {key: '', t: 0}; // para reconhecer o duplo clique mesmo com a tela sendo redesenhada entre os dois
-const TYPE_NAME: Record<ModType, string> = {laser: 'Arma', shield: 'Gerador de escudo', engine: 'Motor', aim: 'Computador de mira', missile: 'Míssil', mining: 'Módulo de mineração'};
+const TYPE_NAME: Record<ModType, string> = {laser: 'Arma', shield: 'Gerador de escudo', engine: 'Motor', aim: 'Computador de mira', missile: 'Míssil', mining: 'Módulo de mineração', chip: 'Chip'};
 
 // motivo para desligar tudo que mexe no equipamento ou nos créditos: vazio na base, preenchido fora dela.
 // É só o aviso na tela: quem barra de verdade são as regras em state.ts.

@@ -3,7 +3,7 @@
 // equipado, na ordem em que estão na nave: cada uma lança o míssil dela, com as cargas e a recarga dela.
 import { MODS, MODEL_DIR, MISSILE_CD, MISSILE_CHARGES } from '../game/data.ts';
 import type { ModKey, ModType } from '../game/data.ts';
-import { p, best, save } from '../game/state.ts';
+import { p, best, save, stats } from '../game/state.ts';
 import { iconOf } from '../view/ships3d.ts';
 
 interface Slot {
@@ -23,6 +23,8 @@ const CANNON = `<svg viewBox="0 0 32 32" width="30" height="30"><g transform="ro
   <rect x="3" y="11" width="13" height="10" rx="2" fill="#55627a"/>
   <rect x="15" y="14" width="13" height="4" fill="#aab8cc"/>
   <rect x="27" y="13" width="2" height="6" fill="#4cf"/></g></svg>`;
+const MULTI = `<svg viewBox="0 0 32 32" width="30" height="30" fill="none" stroke="#ff7ad9" stroke-width="2">
+  <circle cx="16" cy="9" r="5"/><circle cx="8" cy="22" r="5"/><circle cx="24" cy="22" r="5"/><path d="M16 4v10M11 9h10M8 17v10M3 22h10M24 17v10M19 22h10" stroke-width="1.2"/></svg>`;
 // foto de um módulo; sem ele (ou enquanto o modelo não carrega), o desenho reserva
 const modIcon = (k: ModKey | undefined, fallback: string) => {
   const m = k && MODS[k], u = m && m.model && iconOf(`${MODEL_DIR[m.type]}/${m.model}`);
@@ -36,13 +38,16 @@ function slots(): Slot[] {
   return [
     // acesa sempre que os lasers estão liberados para atirar: ligados aqui (ou no Espaço) ou pela mira automática (T)
     {name: 'Canhões', icon: () => bestIcon('laser', CANNON), active: () => p.firing || p.auto, use: () => { p.firing = !p.firing; }},
-    // um por míssil equipado: lançou, a roda conta os segundos até ele voltar
+    // um por míssil equipado: o número no canto são as cargas prontas dele; sem nenhuma, a roda conta os segundos até
+    // a próxima voltar
     ...save.mods.filter(k => MODS[k].type === 'missile').slice(0, 9).map((k, j): Slot => {
       // com mais de uma carga por míssil, o número no canto diz quantas estão prontas; com uma só, a roda basta
       return {name: MODS[k].name, icon: () => modIcon(k, CANNON), charges: () => MISSILE_CHARGES > 1 ? p.mis[j]?.n ?? 0 : null,
               cooldown: () => [p.mis[j]?.n === 0 ? p.mis[j].t : 0, MISSILE_CD],
               use: () => { p.launch = j; }};
     }),
+    // chip de múltiplos alvos, depois dos mísseis e só com ele equipado: de ligar e desligar
+    ...(stats().multi ? [{name: `Múltiplos alvos (até ${stats().multi + 1})`, icon: () => bestIcon('chip', MULTI), active: () => p.multi, use: () => { p.multi = !p.multi; }}] : []),
   ];
 }
 
