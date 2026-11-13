@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import { BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
-import { parseSave, world, best, drops, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
+import { parseSave, persist, world, best, drops, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
 import { HARD, ENGINES, mount } from './src/game/models.ts';
-import { update, hit, explode, keepOut, travel } from './src/game/sim.ts';
+import { update, hit, explode, keepOut, travel, resume } from './src/game/sim.ts';
 import { keys, seed } from './src/game/util.ts';
 import * as THREE from 'three';
 import { TILT, COSV, minimap, toWorld, onScreen } from './src/view/camera.ts';
@@ -455,6 +455,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
     save.mods.push(save.inv.pop()!);
     assert(stats().boost === 1.2 && stats().dmg === Math.round(base0.dmg * 1.2));
     save.mods.push('C2'); assert.equal(stats().boost, 1.2, 'dois chips de dano não somam');
+    assert(keys(SHIPS).every(k => SHIPS[k].slots.chip === 1), 'um chip por nave: Multialvo ou Dano, um de cada vez');
     save.mods.length = 0; save.mods.push(...mods0); }
   p.firing = false; p.target = null; p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; // espera na base, a salvo
   const wait = BOSS_RESPAWN / .05;
@@ -552,6 +553,26 @@ for (const k of keys(MAPS)) for (const g of MAPS[k].portals) {
   assert.equal(world.map, HOME); assert.deepEqual([p.x, p.y], [3000, 2300]);
   M.portals.length = 0; delete all.teste;
   frames(1);
+}
+
+// retomada: o progresso guarda onde a nave estava e como estava, e a hora de cada chefe voltar; recarregar a página
+// (resume) não cura, não leva para a base e não ressuscita o chefe antes da hora
+{
+  reset();
+  const boss0 = save.boss, isBoss = () => enemies.some(e => e.t === BOSS);
+  p.x = p.tx = 4321; p.y = p.ty = 1234; p.hp = 77; p.sh = 5; persist();
+  assert.deepEqual(save.pos, {map: HOME, x: 4321, y: 1234, hp: 77, sh: 5}, 'todo salvamento leva a posição e o estado da nave');
+  assert.deepEqual(parseSave(JSON.parse(JSON.stringify(save)))!.pos, save.pos, 'e isso sobrevive a ser gravado e lido');
+  assert.equal(parseSave({credits: 0, ship: 'scout', mods: [], pos: {map: 'mapa-que-nao-existe', x: 1, y: 1, hp: 1, sh: 1}})!.pos, undefined);
+  save.boss = {[HOME]: Date.now() + 60_000}; // chefe destruído há pouco: só volta daqui a um minuto
+  p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; // "recarrega a página": a nave começaria na base, inteira
+  resume();
+  assert.deepEqual([p.x, p.y, p.hp, p.sh, world.map], [4321, 1234, 77, 5, HOME], 'volta ao ponto, com a vida e o escudo que tinha');
+  frames(5);
+  assert(!isBoss() && enemies.length === POPULATION, 'o chefe continua fora até a hora dele');
+  save.boss = {[HOME]: Date.now() - 1}; resume(); frames(1);
+  assert(isBoss(), 'passada a hora, ele volta');
+  save.boss = boss0; p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; p.sh = stats().maxSh;
 }
 
 // partículas nascem e somem
@@ -703,6 +724,8 @@ for (const dir of keys(FOLDERS)) for (const f of readdirSync(`public/models/${di
   globalThis.fetch = realFetch;
   // o progresso que volta do servidor passa pelo mesmo filtro do progresso local
   assert.equal(parseSave({credits: 5, ship: 'nave-que-nao-existe', mods: []}), null);
+  // equipado além do que a nave comporta (save de quando havia dois slots de chip): o excedente vai para o inventário
+  assert.deepEqual(parseSave({credits: 0, ship: 'scout', mods: ['L1', 'C1', 'C2', 'L1'], inv: ['S1']}), {credits: 0, ship: 'scout', mods: ['L1', 'C1', 'L1'], owned: ['scout'], inv: ['S1', 'C2'], cargo: {purple: 0, cyan: 0, blue: 0}});
   assert.deepEqual(parseSave({credits: 5, ship: 'scout', mods: ['L1', 'zz'], owned: ['scout'], inv: ['L2', 'xx'], cargo: {purple: 3, ouro: 9}}),
                    {credits: 5, ship: 'scout', mods: ['L1'], owned: ['scout'], inv: ['L2'], cargo: {purple: 3, cyan: 0, blue: 0}});
 }

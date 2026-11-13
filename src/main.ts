@@ -5,7 +5,7 @@ import { SHIPS, MODS, MODEL_DIR, ORES } from './game/data.ts';
 import { keys } from './game/util.ts';
 import { pathOf, preload } from './view/ships3d.ts';
 import { applyInput } from './ui/input.ts';
-import { update } from './game/sim.ts';
+import { update, resume } from './game/sim.ts';
 import { draw, preloadImages, IMAGES } from './view/render.ts';
 import { ui } from './view/camera.ts';
 import { syncHotbar } from './ui/hotbar.ts';
@@ -76,6 +76,7 @@ const tick = () => {
 };
 const assets = Promise.race([Promise.all([preload(models, tick), preloadImages(m0.bg, tick), preloadSounds().then(tick)]), new Promise(ok => setTimeout(ok, WAIT * 1000))]);
 await enter(screen); // conta do piloto: entra, cria ou segue sem conta, enquanto os arquivos carregam por trás
+resume(); // a nave volta para onde estava, e chefe destruído continua destruído até a hora dele
 await assets;
 if (screen) { screen.classList.add('done'); screen.addEventListener('transitionend', () => screen.remove()); }
 

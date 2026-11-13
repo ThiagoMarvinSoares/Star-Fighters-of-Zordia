@@ -15,6 +15,12 @@ export interface Save {
   inv: ModKey[];
   /** minério no porão, por tipo (pode ter fração: o feixe extrai aos poucos) */
   cargo: Record<OreKey, number>;
+  /** onde a nave estava, e com quanta vida e escudo, no último salvamento: ao voltar ao jogo ela reaparece ali, do
+   *  jeito que estava (recarregar a página não cura nem teleporta para a base) */
+  pos?: { map: MapKey; x: number; y: number; hp: number; sh: number };
+  /** chefes destruídos: por mapa, o instante (relógio do mundo, em ms) em que cada um volta. Recarregar a página não
+   *  traz o chefe de volta antes da hora. */
+  boss?: Partial<Record<MapKey, number>>;
 }
 export interface Stats {
   maxHp: number; maxSh: number; dmg: number; speed: number;
@@ -117,13 +123,26 @@ const SAVE_KEY = 'star-fighters-of-zordia', OLD_SAVE_KEY = 'nebula-raiders';
  *  null se não serve. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function parseSave(s: any): Save | null {
-    if (s && Object.hasOwn(SHIPS, s.ship) && Array.isArray(s.mods) && s.credits >= 0)
-      return {credits: +s.credits, ship: s.ship, mods: trim(s.mods, s.ship),
+    if (s && Object.hasOwn(SHIPS, s.ship) && Array.isArray(s.mods) && s.credits >= 0) {
+      // Módulos equipados além do que a nave comporta hoje (um save de quando ela tinha mais slots daquele tipo) não se
+      // perdem: vão para o inventário.
+      const mods = trim(s.mods, s.ship), left = [...mods];
+      const spare: ModKey[] = [];
+      for (const m of s.mods as unknown[]) if (typeof m === 'string' && Object.hasOwn(MODS, m)) {
+        const i = left.indexOf(m as ModKey);
+        if (i >= 0) left.splice(i, 1); else spare.push(m as ModKey); // o que trim deixou de fora
+      }
+      return {credits: +s.credits, ship: s.ship, mods,
               // save antigo (sem lista de naves): fica com a atual e as mais baratas que ela
               owned: Array.isArray(s.owned) ? [...new Set<ShipKey>([s.ship, ...s.owned.filter((k: unknown) => typeof k === 'string' && Object.hasOwn(SHIPS, k))])]
                                             : (Object.keys(SHIPS) as ShipKey[]).filter(k => SHIPS[k].cost <= SHIPS[s.ship as ShipKey].cost),
-              inv: Array.isArray(s.inv) ? s.inv.filter((m: unknown) => typeof m === 'string' && Object.hasOwn(MODS, m)) : [],
-              cargo: emptyCargo(s.cargo)};
+              inv: [...(Array.isArray(s.inv) ? s.inv.filter((m: unknown) => typeof m === 'string' && Object.hasOwn(MODS, m)) : []), ...spare],
+              cargo: emptyCargo(s.cargo),
+              ...(s.pos && Object.hasOwn(MAPS, s.pos.map) && [s.pos.x, s.pos.y, s.pos.hp, s.pos.sh].every(Number.isFinite)
+                  && {pos: {map: s.pos.map, x: +s.pos.x, y: +s.pos.y, hp: +s.pos.hp, sh: +s.pos.sh}}),
+              ...(s.boss && typeof s.boss === 'object'
+                  && {boss: Object.fromEntries(Object.entries(s.boss).filter(([k, v]) => Object.hasOwn(MAPS, k) && Number.isFinite(v)))})};
+    }
   return null;
 }
 function load(): Save {
@@ -131,7 +150,11 @@ function load(): Save {
   return {credits: START.credits, ship: START.ship, owned: [START.ship], mods: [...START.mods], inv: [], cargo: emptyCargo()};
 }
 export const save = load();
-const store = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} };
+// todo salvamento leva junto onde a nave está e como está (ver Save.pos)
+const store = () => {
+  save.pos = {map: world.map, x: p.x, y: p.y, hp: p.hp, sh: p.sh};
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {}
+};
 /** avisados a cada salvamento (a conta do piloto usa para mandar o progresso ao servidor) */
 export const onPersist: (() => void)[] = [];
 export const persist = () => { store(); for (const f of onPersist) f(); };
@@ -167,8 +190,10 @@ export const rocks: Rock[] = [], drops: Drop[] = [];
 export function adopt(raw: unknown) {
   const got = parseSave(raw);
   if (!got) return false;
-  Object.assign(save, got); store();
-  const st = stats(); p.hp = st.maxHp; p.sh = st.maxSh;
+  delete save.pos; delete save.boss; // o que o progresso novo não trouxer não pode sobrar do antigo
+  Object.assign(save, got);
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} // sem passar por store(): a posição é a do progresso, não a de agora
+  const st = stats(); p.hp = st.maxHp; p.sh = st.maxSh; // quem chama segue com resume() (sim.ts), que põe a nave onde ela estava
   return true;
 }
 /** apaga o progresso guardado neste navegador (ao sair de uma conta: ele continua no servidor) */

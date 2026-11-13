@@ -23,6 +23,16 @@ export function travel(to: MapKey, x: number, y: number) {
   Object.assign(p, {x, y, tx: x, ty: y, target: null, mining: null, beam: false});
 }
 
+/** Retoma de onde o progresso parou (ao abrir o jogo ou entrar com um piloto): a nave volta ao mapa, ao ponto, à vida e ao
+ *  escudo do último salvamento, e os chefes destruídos continuam fora até a hora de cada um. Sem nada salvo, não muda nada. */
+export function resume() {
+  for (const k of Object.keys(MAPS) as MapKey[]) bossAt[k] = now + Math.max(0, ((save.boss?.[k] ?? 0) - Date.now()) / 1000);
+  const q = save.pos, m = q && MAPS[q.map];
+  if (!q || !m) return;
+  travel(q.map, clamp(q.x, 0, m.w), clamp(q.y, 0, m.h));
+  const st = stats(); p.hp = clamp(q.hp, 1, st.maxHp); p.sh = clamp(q.sh, 0, st.maxSh);
+}
+
 export const float = (o: Point, s: string, c: string, t = 1) => texts.push({x: o.x + rnd(-15, 15), y: o.y - 20, s, c, t});
 
 // escudo absorve primeiro; retorna true se destruiu
@@ -314,7 +324,10 @@ export function update(dt: number) {
     parts.push({x: tg.x + rnd(-8, 8), y: tg.y + rnd(-8, 8), vx: 0, vy: 0, t: .15, life: .15, r: 7, c: q.c}); // faísca do impacto
     if (hit(tg, q.dmg) && 't' in tg) { // inimigo destruído (a morte do jogador é tratada logo abaixo)
       enemies.splice(enemies.indexOf(tg), 1); if (p.target === tg) p.target = null; explode(tg, tg.t.r);
-      if (boss && tg.t === boss.def) { bossAt[world.map] = now + boss.respawn; drops.push({x: tg.x, y: tg.y, item: BOSS_DROP}); } // o chefe deixa o espólio dele
+      if (boss && tg.t === boss.def) { // o chefe deixa o espólio dele, e a hora de voltar fica salva com o progresso
+        bossAt[world.map] = now + boss.respawn; save.boss = {...save.boss, [world.map]: Date.now() + boss.respawn * 1000};
+        drops.push({x: tg.x, y: tg.y, item: BOSS_DROP});
+      }
       save.credits += tg.t.reward; persist();
       float(tg, '+' + tg.t.reward + ' cr', '#fd4', 1.5);
     }
@@ -327,6 +340,7 @@ export function update(dt: number) {
     if (world.map !== HOME) travel(HOME, SPAWN.x, SPAWN.y);
     Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
     p.deaths++; // input.ts usa isso para soltar o botão do mouse
+    persist(); // a posição salva passa a ser a da base: recarregar a página não devolve a nave ao lugar onde morreu
     enemies.forEach(calm);
     float(p, 'Nave destruída — reparada na base', '#fff', 3);
   }

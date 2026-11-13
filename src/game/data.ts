@@ -73,11 +73,11 @@ export interface EnemyDef {
 // Corvette, Mk3 do Cruiser. Ao mexer nos números, confira a espera entre compras (o teste mede a maior delas).
 export const START = {credits: 300, ship: 'scout', mods: ['L1', 'L1', 'S1']} as const; // sobra um slot de arma: a 1ª compra é imediata
 export const SHIPS: Record<ShipKey, ShipDef> = {
-  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 2}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
-  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 2}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
-  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 2}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
+  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 1}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
+  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 1}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
+  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
   // tier 4: a vida do Cruiser, bem mais rápida, com um escudo e um míssil a mais que ele
-  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 2}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
+  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
 };
 export const MODS: Record<ModKey, ModDef> = {
   L1: {name: 'Laser Mk1',  type: 'laser',  val: 25,   cost: 300,  model: 'mp1'},
@@ -106,7 +106,7 @@ export const MODS: Record<ModKey, ModDef> = {
   // entre o alvo travado e os inimigos mais próximos ao alcance; desligado, todos focam o alvo travado.
   C1: {name: 'Chip Multialvo', type: 'chip', val: 2, cost: 4000, model: 'chip1', chip: 'multi'},
   // chip de dano: +20% no dano de lasers e mísseis. Não se compra: o chefe solta um ao ser destruído (BOSS_DROP).
-  // Equipar dois não soma. Cada nave tem dois slots de chip, para ele conviver com o Multialvo.
+  // Cada nave tem um slot de chip só: é este ou o Multialvo, um de cada vez.
   C2: {name: 'Chip de Dano', type: 'chip', val: 20, cost: 10000, model: 'chip2', chip: 'damage', effect: '+20% de dano (lasers e mísseis)', drop: true},
 };
 /** pasta de cada tipo de módulo dentro de public/models/ */
