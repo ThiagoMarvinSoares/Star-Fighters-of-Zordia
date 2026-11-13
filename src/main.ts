@@ -7,6 +7,7 @@ import { pathOf, preload } from './view/ships3d.ts';
 import { applyInput } from './ui/input.ts';
 import { update } from './game/sim.ts';
 import { draw, preloadImages, IMAGES } from './view/render.ts';
+import { ui } from './view/camera.ts';
 import { syncHotbar } from './ui/hotbar.ts';
 import { playEvents, preloadSounds } from './view/audio.ts';
 import { syncHud } from './ui/hud.ts';
@@ -19,7 +20,25 @@ const resize = () => {
   view.w = innerWidth; view.h = innerHeight; view.dpr = Math.min(devicePixelRatio || 1, 2);
   cv.width = Math.round(view.w * view.dpr); cv.height = Math.round(view.h * view.dpr);
   cv.style.width = view.w + 'px'; cv.style.height = view.h + 'px';
+  // Tamanho da interface: cresce com a janela (numa tela grande, painéis do tamanho de 1280x720 ficam miúdos) e com a
+  // preferência do jogador. O zoom do navegador já amplia tudo sozinho: com ele a janela "encolhe" em pixels CSS, a
+  // parte automática volta para 1 e a interface não é ampliada duas vezes.
+  ui.scale = Math.min(1.8, Math.max(1, Math.min(view.w / 1280, view.h / 720))) * ui.pref;
+  const root = document.documentElement.style;
+  root.setProperty('--ui', String(ui.scale));
+  root.setProperty('--ui-shop', String(Math.min(ui.scale, view.w * .98 / Math.min(1000, view.w * .96)))); // o hangar é largo: só até caber
 };
+// preferência de tamanho da interface: teclas + e -, de 80% a 180%, lembrada neste navegador
+const UI_KEY = 'star-fighters-of-zordia:ui';
+try { const v = +(localStorage.getItem(UI_KEY) ?? ''); if (v >= .8 && v <= 1.8) ui.pref = v; } catch {}
+addEventListener('keydown', ev => {
+  if (ev.target instanceof HTMLInputElement || ev.ctrlKey || ev.metaKey) return; // Ctrl + e Ctrl - são o zoom do navegador
+  const step = ev.code === 'Equal' || ev.code === 'NumpadAdd' ? .1 : ev.code === 'Minus' || ev.code === 'NumpadSubtract' ? -.1 : 0;
+  if (!step) return;
+  ui.pref = Math.round(Math.min(1.8, Math.max(.8, ui.pref + step)) * 10) / 10;
+  try { localStorage.setItem(UI_KEY, String(ui.pref)); } catch {}
+  resize();
+});
 addEventListener('resize', resize); resize();
 
 // Título do mapa: surge e some sozinho (animação no style.css), ao carregar a página e a cada troca de mapa.

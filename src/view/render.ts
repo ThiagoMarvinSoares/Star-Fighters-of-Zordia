@@ -6,7 +6,7 @@ import { save, stats, cargoUsed, p, enemies, rocks, shots, texts, parts, events,
 import type { Stats } from '../game/state.ts';
 import { clamp } from '../game/util.ts';
 import type { Point } from '../game/util.ts';
-import { TILT, COSV, onScreen, minimap } from './camera.ts';
+import { TILT, COSV, onScreen, minimap, ui } from './camera.ts';
 import { SCALE } from '../game/models.ts';
 import { createStage, hasModel } from './ships3d.ts';
 
@@ -261,11 +261,17 @@ export function draw() {
   ctx.restore();
 
   // ---------- HUD desenhada no canvas: dica dos controles e minimapa (os painéis do jogador e do alvo ficam em hud.ts) ----------
+  // Tudo aqui é desenhado nas medidas de uma tela 1x e ampliado por ui.scale, como os painéis em HTML.
+  const u = ui.scale, mm = minimap();
+  ctx.save(); ctx.scale(u, u);
   ctx.textAlign = 'left'; ctx.fillStyle = '#789'; ctx.font = '12px monospace';
-  ctx.fillText('Clique: mover / travar alvo / minerar   Roda do mouse: zoom   1 ou ESPAÇO: canhões   2: mísseis   T: mira automática   B: inventário   F: fps', 12, 18);
+  ['Clique: mover / travar alvo / minerar', 'Roda do mouse: zoom   + e -: tamanho da interface', '1 ou ESPAÇO: canhões   2: mísseis   T: mira automática', 'B: inventário   F: fps']
+    .forEach((line, i) => ctx.fillText(line, 12, 18 + i * 16)); // em linhas curtas: uma linha só passava por baixo do painel do alvo
+  ctx.restore();
   ctx.font = '14px monospace';
-  // minimapa
-  const {x: ox, y: oy, w: mw, h: mh, k: mk} = minimap(); // mk = escala mundo -> minimapa
+  // minimapa: a origem vai para o canto dele e a escala para u; daqui em diante ox, oy, mw, mh e mk são da tela 1x
+  ctx.save(); ctx.translate(mm.x, mm.y); ctx.scale(u, u);
+  const ox = 0, oy = 0, mw = mm.w / u, mh = mm.h / u, mk = mm.k / u; // mk = escala mundo -> minimapa
   ctx.fillStyle = 'rgba(10,20,40,.8)'; ctx.fillRect(ox, oy, mw, mh); ctx.strokeStyle = '#357'; ctx.strokeRect(ox, oy, mw, mh);
   if (BASE) { ctx.fillStyle = '#2a6'; ctx.fillRect(ox + BASE.x * mk - 3, oy + BASE.y * mk - 3, 6, 6); }
   for (const k of rocks) if (seen.has(k)) { ctx.fillStyle = ORES[k.ore].color; ctx.fillRect(ox + k.x * mk - 1, oy + k.y * mk - 1, 3, 3); } // asteroides já vistos
@@ -279,4 +285,5 @@ export function draw() {
     ctx.strokeRect(ox + p.tx * mk - 2, oy + p.ty * mk - 2, 4, 4); ctx.lineWidth = 2;
   }
   ctx.fillStyle = '#fff'; ctx.fillRect(ox + p.x * mk - 2, oy + p.y * mk - 2, 4, 4);
+  ctx.restore();
 }

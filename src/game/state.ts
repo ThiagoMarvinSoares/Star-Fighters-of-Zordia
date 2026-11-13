@@ -46,8 +46,11 @@ export interface Player extends Body {
   lastShot: number; fight: number;
   /** pedido de lançar os mísseis (barra de atalhos); a simulação atende e apaga */
   launch: boolean;
-  /** tempo até poder lançar mísseis de novo */
+  /** tempo até poder lançar outro míssil (intervalo mínimo entre lançamentos) */
   mcd: number;
+  /** cargas de míssil: segundos até cada uma voltar (0 = pronta); MISSILE_CHARGES por módulo equipado, na ordem dos
+   *  módulos do melhor para o pior. mleft = o próximo míssil sai do lado esquerdo da nave. */
+  mload: number[]; mleft: boolean;
   /** asteroide escolhido para minerar (clique), e se o feixe está ligado neste quadro */
   mining: Rock | null; beam: boolean;
   deaths: number;
@@ -56,6 +59,9 @@ export interface Enemy extends Body {
   t: EnemyDef;
   /** ponto para onde está vagando */
   wx: number; wy: number;
+  /** casa: onde nasceu. Ele vaga em volta dela e não se afasta mais que LEASH. back = voltando para casa, sem dar
+   *  atenção ao jogador. */
+  hx: number; hy: number; back: boolean;
   hostile: boolean;
 }
 /** asteroide: parado no mapa, some quando o minério (left) acaba */
@@ -74,6 +80,8 @@ export interface Shot {
   h: number;
   /** míssil: voa devagar, deixa rastro e explode ao chegar */
   missile?: boolean;
+  /** míssil de uma salva de vários: faixa em que ele voa, em distância para o lado da linha até o alvo (com sinal) */
+  lane?: number;
   /** tiro que vai errar: passa a esta distância do alvo e some sem causar dano */
   off?: { x: number; y: number };
 }
@@ -141,7 +149,7 @@ export const map = (): MapDef => MAPS[world.map];
 
 const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
-                          target: null, firing: false, auto: false, launch: false, mcd: 0, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
+                          target: null, firing: false, auto: false, launch: false, mcd: 0, mload: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
 export const rocks: Rock[] = [];
 /** Troca o progresso atual pelo que veio de fora (o da conta, ao entrar) e conserta a nave para ele; false se não serve.
  *  Grava no navegador, mas não avisa onPersist: o servidor acabou de mandar esse mesmo progresso. */

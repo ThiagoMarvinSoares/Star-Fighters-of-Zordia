@@ -1,6 +1,6 @@
 // Simulação: as regras do jogo. Só altera o estado; não sabe nada de canvas, tela nem teclado.
-import { RANGE, SHOT_SPEED, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, COMBAT, PORTAL_R, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
-import type { EnemyDef, MapKey } from './data.ts';
+import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_GAP, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, PORTAL_R, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
+import type { EnemyDef, MapDef, MapKey } from './data.ts';
 import type { ModelKey, ModKey } from './data.ts';
 import { save, persist, stats, cargoUsed, p, enemies, rocks, shots, texts, parts, events, world, map } from './state.ts';
 import type { Body, Enemy, Player, Rock } from './state.ts';
@@ -61,6 +61,7 @@ function flame(at: Point, a: number, size: number, c: string, h = 0) {
 }
 // chama dos motores de uma nave: uma partícula por bocal do modelo (ENGINES), saindo de lá. Sem bocal, sem chama
 // (alienígenas orgânicos). k < 1 = chama menor. Quanto mais bocais, menor cada chama, para o total não crescer.
+const LANE = 44; // distância entre a faixa de voo do míssil da esquerda e a do da direita
 const FLAME = .25; // raio da chama em relação ao raio da nave (com um bocal só)
 function thrust(o: Heading, r: number, key: ModelKey, c: string, k = 1) {
   const noz = ENGINES[key];
@@ -75,7 +76,7 @@ export function explode(o: Point, r: number) {
   events.push({kind: 'boom', x: o.x, y: o.y, r});
 }
 
-const born = (t: EnemyDef, x: number, y: number): Enemy => ({t, x, y, wx: x, wy: y, a: 0, hp: t.hp, sh: t.sh, cd: 0, lastHit: -99, hostile: false});
+const born = (t: EnemyDef, x: number, y: number): Enemy => ({t, x, y, wx: x, wy: y, hx: x, hy: y, back: false, a: 0, hp: t.hp, sh: t.sh, cd: 0, lastHit: -99, hostile: false});
 // Sorteia com pick() um ponto que passe em ok() e fique a pelo menos far do jogador. Em mapa pequeno pode não existir
 // ponto tão longe: depois de 40 sorteios fica o candidato válido mais distante, em vez de sortear para sempre.
 function place(pick: () => Point, ok: (q: Point) => boolean, far: number): Point {
@@ -99,22 +100,42 @@ function rock0(away: boolean): Rock {
   const ore = m.ores[clamp(Math.round(far * (m.ores.length - 1) + rnd(-.6, .4)), 0, m.ores.length - 1)];
   return {ore, x, y, a: rnd(0, 6.28), r: rnd(28, 44), left: Math.round(rnd(ROCK_ORE[0], ROCK_ORE[1]))};
 }
-// away = reposição de um inimigo destruído: nasce longe do jogador (a população inicial ignora isso, senão o começo ficaria vazio)
-function spawn(away: boolean): Enemy {
-  // o: de onde se mede a força (a base ou, sem base, o ponto de chegada). Nunca em cima da base nem do jogador.
-  const m = map(), o = m.base ?? m.spawn, gap = m.base ? m.base.r + 300 : 0;
-  const {x, y} = place(() => ({x: rnd(0, m.w), y: rnd(0, m.h)}), q => dist(q, o) >= gap, away ? CLEAR : 600);
-  // Quanto mais longe da base, mais forte: a distância escolhe um degrau da lista de inimigos e o sorteio mistura
-  // com os vizinhos, puxando mais para o lado fraco. Perto da base só nascem os dois primeiros.
-  const far = clamp((dist({x, y}, o) / Math.hypot(m.w, m.h) - .14) / .62, 0, 1);
-  const t = m.enemies[clamp(Math.round(far * (m.enemies.length - 1) + rnd(-1.3, .5)), 0, m.enemies.length - 1)];
-  return born(t, x, y);
+// ---------- população: cada tipo de inimigo na sua faixa ----------
+// O mapa é dividido em faixas de distância a partir da base (ou do ponto de chegada, sem base), uma por tipo de inimigo:
+// o mais fraco na primeira, o mais forte na última. Cada tipo tem uma cota fixa (MapDef.mix) e nasce só na faixa dele,
+// e quem morre é reposto por outro do mesmo tipo. Assim a área perto da base sempre volta a ter inimigos fracos, e a
+// proporção entre fracos e fortes não muda com o tempo.
+const quotaOf = new Map<MapDef, number[]>();
+/** quantos de cada tipo o mapa mantém: population repartida conforme mix, somando exatamente population */
+function quotas(m: MapDef) {
+  let q = quotaOf.get(m);
+  if (!q) {
+    const mix = m.enemies.map((_, i) => m.mix?.[i] ?? 1), total = mix.reduce((a, b) => a + b, 0), exact = mix.map(w => w / total * m.population);
+    q = exact.map(Math.floor);
+    for (const i of exact.map((v, i) => [v - Math.floor(v), i]).sort((a, b) => b[0] - a[0]).map(v => v[1]).slice(0, m.population - q.reduce((a, b) => a + b, 0))) q[i]++;
+    quotaOf.set(m, q);
+  }
+  return q;
+}
+/** faixa do tipo i: [de, até], em distância a partir da base. A primeira começa logo fora da base; a última vai até o fim. */
+function band(m: MapDef, i: number): [number, number] {
+  const n = m.enemies.length, diag = Math.hypot(m.w, m.h), gap = m.base ? m.base.r + 300 : 0;
+  const at = (k: number) => (clamp(k / Math.max(1, n - 1), 0, 1) * .62 + .14) * diag; // distância onde a faixa k "centra"
+  return [i === 0 ? gap : Math.max(gap, at(i - .5)), i === n - 1 ? diag : at(i + .5)];
+}
+// um inimigo do tipo i, num ponto da faixa dele. away = reposição de um destruído: nasce longe do jogador (a população
+// inicial só evita nascer em cima dele, senão o começo ficaria vazio)
+function spawn(i: number, away: boolean): Enemy {
+  const m = map(), o = m.base ?? m.spawn, [r0, r1] = band(m, i);
+  const {x, y} = place(() => { const r = rnd(r0, r1), a = rnd(0, 6.2832); return {x: o.x + Math.cos(a) * r, y: o.y + Math.sin(a) * r}; },
+                       q => q.x >= 0 && q.x <= m.w && q.y >= 0 && q.y <= m.h, away ? CLEAR : 600);
+  return born(m.enemies[i], x, y);
 }
 
 // dispara o tiro i da nave src (modelo key), saindo do ponto de fixação i, depois de delay segundos
-const shoot = (src: Player | Enemy, r: number, key: ModelKey, i: number, tgt: Player | Enemy, dmg: number, c: string, delay: number, mod?: ModKey, miss = false, missile = false) => {
+const shoot = (src: Player | Enemy, r: number, key: ModelKey, i: number, tgt: Player | Enemy, dmg: number, c: string, delay: number, mod?: ModKey, miss = false, missile = false, lane = 0) => {
   const a = rnd(0, 6.28), m = ('t' in tgt ? tgt.t.r : 20) * 1.5 + rnd(25, 60); // quem erra passa ao lado do alvo, fora do casco
-  shots.push({src, r, hard: HARD[key][i % HARD[key].length], tgt, dmg, c, delay, mod, live: false, x: 0, y: 0, a: 0, h: 0, missile,
+  shots.push({src, r, hard: HARD[key][i % HARD[key].length], tgt, dmg, c, delay, mod, live: false, x: 0, y: 0, a: 0, h: 0, missile, lane,
               off: miss ? {x: Math.cos(a) * m, y: Math.sin(a) * m} : undefined});
 };
 
@@ -131,7 +152,10 @@ export function update(dt: number) {
   // Zona segura: dentro da base e fora de combate. Quem atirou ou levou dano há menos de COMBAT segundos continua em
   // combate mesmo dentro da base: os inimigos seguem atirando e a cura rápida não liga.
   p.fight = Math.max(0, COMBAT - (now - Math.max(p.lastHit, p.lastShot)));
-  const safe = !!base && dist(p, base) < base.r && p.fight <= 0;
+  const inBase = !!base && dist(p, base) < base.r, safe = inBase && p.fight <= 0;
+  // De dentro da base o jogador nunca atira, nem em combate. Os inimigos não entram na faixa em volta dela e os lasers
+  // do jogador alcançam mais longe que os deles: atirando lá de dentro dava para acertar um inimigo preso na borda, sem
+  // ele conseguir chegar nem responder.
   // Inimigo que desiste da luta volta inteiro: sem isso dava para ferir, fugir, curar e voltar até vencer qualquer um.
   // O chefe é a exceção: a luta contra ele é feita em várias investidas, e a vida dele fica entre uma e outra.
   const calm = (e: Enemy) => { if (e.hostile) { e.hostile = false; if (!boss || e.t !== boss.def) { e.hp = e.t.hp; e.sh = e.t.sh; } } };
@@ -142,7 +166,7 @@ export function update(dt: number) {
   // ---------- armas do jogador ----------
   p.cd -= dt;
   // mira automática: sem alvo ao alcance, trava o inimigo mais próximo que estiver dentro do alcance
-  if (p.auto && !safe && !(p.target && dist(p, p.target) <= RANGE)) {
+  if (p.auto && !inBase && !(p.target && dist(p, p.target) <= RANGE)) {
     let best = RANGE;
     for (const e of enemies) { const d = dist(p, e); if (d <= best) { best = d; p.target = e; } }
   }
@@ -150,7 +174,7 @@ export function update(dt: number) {
   if (t) {
     const td = dist(p, t);
     if (td > 1500) p.target = null;
-    else if (!safe && (p.firing || p.auto) && td <= RANGE && p.cd <= 0 && st.dmg) { // a salvo na base ninguém atira
+    else if (!inBase && (p.firing || p.auto) && td <= RANGE && p.cd <= 0 && st.dmg) {
       p.cd = 1; t.hostile = true; p.lastShot = now;
       // um tiro por módulo de laser, cada um saindo do seu ponto de fixação e com o dano do seu módulo
       save.mods.filter(m => MODS[m].type === 'laser').forEach((m, i, l) =>
@@ -179,24 +203,39 @@ export function update(dt: number) {
   }
   if (was && !p.beam) persist();
 
-  // mísseis: lançados a pedido (barra de atalhos), um por módulo equipado, contra o alvo travado; erram como os lasers
+  // ---------- mísseis ----------
+  // Cada módulo equipado tem MISSILE_CHARGES cargas, e cada carga gasta volta sozinha em MISSILE_CD segundos. Um aperto
+  // (barra de atalhos) lança uma carga contra o alvo travado, a do melhor míssil que tiver uma pronta, alternando o lado
+  // da nave: esquerda, direita. Erram como os lasers.
+  const ms = save.mods.filter(m => MODS[m].type === 'missile').sort((a, b) => MODS[b].val - MODS[a].val);
+  while (p.mload.length < ms.length * MISSILE_CHARGES) p.mload.push(0); // módulo recém-equipado: cargas prontas
+  p.mload.length = ms.length * MISSILE_CHARGES;
+  for (let i = 0; i < p.mload.length; i++) p.mload[i] = Math.max(0, p.mload[i] - dt);
   p.mcd -= dt;
   if (p.launch) {
     p.launch = false;
-    const ms = save.mods.filter(m => MODS[m].type === 'missile');
-    if (t && p.target === t && !safe && ms.length && p.mcd <= 0 && dist(p, t) <= RANGE) {
-      p.mcd = MISSILE_CD; t.hostile = true; p.lastShot = now;
-      ms.forEach((m, i) => shoot(p, st.r, save.ship, i, t, MODS[m].val, '#fa4', i * .25, m, rand() >= st.acc, true));
+    const c = p.mload.indexOf(0);
+    if (t && p.target === t && !inBase && c >= 0 && p.mcd <= 0 && dist(p, t) <= RANGE) {
+      const m = ms[Math.floor(c / MISSILE_CHARGES)], left = p.mleft;
+      p.mload[c] = MISSILE_CD; p.mcd = MISSILE_GAP; p.mleft = !left; t.hostile = true; p.lastShot = now;
+      // ponto de fixação 1 = lado esquerdo da nave, 0 = direito (os pares de HARD são espelhados); a faixa de voo
+      // acompanha o lado, para dois mísseis seguidos irem lado a lado e não em fila
+      shoot(p, st.r, save.ship, left ? 1 : 0, t, MODS[m].val, '#fa4', 0, m, rand() >= st.acc, true, (left ? -1 : 1) * LANE / 2);
     }
   }
 
   // ---------- IA dos inimigos ----------
   for (const e of enemies) {
     const ed = dist(e, p);
-    if (ed > 1400) calm(e); // perdeu o jogador de vista
+    // perdeu o jogador de vista, ou foi longe demais de casa: desiste. Longe de casa ele ainda volta (back) sem dar
+    // atenção ao jogador, até estar de novo bem dentro do território dele.
+    const dh = Math.hypot(e.x - e.hx, e.y - e.hy);
+    if (dh > LEASH) { calm(e); e.back = true; e.wx = e.hx; e.wy = e.hy; }
+    else if (dh < LEASH * (e.hostile ? .85 : .5)) e.back = false; // atacado no caminho de volta, reage mais cedo
+    if (ed > 1400) calm(e);
     if (now - e.lastHit > 6) e.sh = Math.min(e.t.sh, e.sh + e.t.sh * .05 * dt);
     e.cd -= dt;
-    if (!safe && (e.hostile || e.t.aggro && ed < Math.max(450, e.t.range ?? 0))) {
+    if (!safe && !e.back && (e.hostile || e.t.aggro && ed < Math.max(450, e.t.range ?? 0))) {
       if (ed <= 280) e.a = Math.atan2(p.y - e.y, p.x - e.x);
       else if (approach(e, p.x, p.y, e.t.speed * dt)) thrust(e, e.t.r, e.t.key, e.t.color);
       if (ed < (e.t.range ?? 500) && e.cd <= 0) {
@@ -206,10 +245,16 @@ export function update(dt: number) {
       }
     } else {
       if (Math.hypot(e.wx - e.x, e.wy - e.y) < 10) { // chegou: sorteia outro ponto para vagar, fora da área da base
-        const c = boss && e.t === boss.def ? boss : e; // o chefe ronda o ponto dele; os outros vagam a partir de onde estão
-        do { e.wx = clamp(c.x + rnd(-400, 400), 0, m.w); e.wy = clamp(c.y + rnd(-400, 400), 0, m.h); } while (base && dist({x: e.wx, y: e.wy}, base) < keepOut() + 50);
+        // vaga em volta de casa, nunca a partir de onde está: senão, de ponto em ponto, ia parar em qualquer lugar do mapa
+        // No máximo 40 sorteios por quadro, como em place(): se a casa estiver tão perto da base que nenhum ponto em volta
+        // dela serve, ele fica onde está e tenta de novo no quadro seguinte, em vez de sortear para sempre e travar o jogo.
+        for (let i = 0; i < 40; i++) {
+          const q = {x: clamp(e.hx + rnd(-400, 400), 0, m.w), y: clamp(e.hy + rnd(-400, 400), 0, m.h)};
+          if (!base || dist(q, base) >= keepOut() + 50) { e.wx = q.x; e.wy = q.y; break; }
+        }
       }
-      if (approach(e, e.wx, e.wy, e.t.speed * .4 * dt)) thrust(e, e.t.r, e.t.key, e.t.color, .6); // vagando: chama menor
+      // vagando: devagar e com chama menor; voltando para casa: na velocidade normal
+      if (approach(e, e.wx, e.wy, e.t.speed * (e.back ? 1 : .4) * dt)) thrust(e, e.t.r, e.t.key, e.t.color, e.back ? 1 : .6);
     }
   }
 
@@ -223,7 +268,13 @@ export function update(dt: number) {
       q.x = at.x; q.y = at.y; q.h = q.hard[1] * q.r * SCALE; q.live = true;
       events.push({kind: 'shot', x: q.x, y: q.y, h: q.h, c: q.c, mine: q.src === p, mod: q.mod});
     }
-    const dx = q.tgt.x + (q.off?.x ?? 0) - q.x, dy = q.tgt.y + (q.off?.y ?? 0) - q.y, d = Math.hypot(dx, dy), m = (q.missile ? MISSILE_SPEED : SHOT_SPEED) * dt;
+    let dx = q.tgt.x + (q.off?.x ?? 0) - q.x, dy = q.tgt.y + (q.off?.y ?? 0) - q.y;
+    const d = Math.hypot(dx, dy), m = (q.missile ? MISSILE_SPEED : SHOT_SPEED) * dt;
+    if (q.lane && d > 1) { // mira num ponto ao lado do alvo, cada vez mais perto dele: a faixa se fecha na chegada
+      const side = q.lane * Math.min(1, d / 260);
+      const ax = dx - dy / d * side, ay = dy + dx / d * side, al = Math.hypot(ax, ay) || 1;
+      dx = ax / al * d; dy = ay / al * d;
+    }
     q.a = Math.atan2(dy, dx);
     if (q.missile) { // rastro: sai da cauda do modelo (o centro dele fica na posição do tiro), na altura em que ele voa
       const tail = MISSILE_R * SCALE;
@@ -250,7 +301,7 @@ export function update(dt: number) {
     explode(p, st.r); shots.length = 0;
     const SPAWN = MAPS[HOME].spawn; // renasce sempre na base do mapa inicial, esteja onde estiver
     if (world.map !== HOME) travel(HOME, SPAWN.x, SPAWN.y);
-    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, launch: false, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
+    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, launch: false, mload: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
     p.deaths++; // input.ts usa isso para soltar o botão do mouse
     enemies.forEach(calm);
     float(p, 'Nave destruída — reparada na base', '#fff', 3);
@@ -259,7 +310,9 @@ export function update(dt: number) {
   const cur = map(), cb = cur.boss; // de novo: a morte pode ter levado a nave de volta ao mapa inicial
   let alive = !!cb && enemies.some(e => e.t === cb.def);
   if (cb && !alive && now >= (bossAt[world.map] ?? 0)) { enemies.push(born(cb.def, cb.x, cb.y)); alive = true; }
-  while (enemies.length < cur.population + +alive) enemies.push(spawn(seeded)); // os comuns, fora o chefe
+  quotas(cur).forEach((want, i) => { // os comuns: cada tipo completa a cota dele, na faixa dele
+    for (let have = enemies.filter(e => e.t === cur.enemies[i]).length; have < want; have++) enemies.push(spawn(i, seeded));
+  });
   while (rocks.length < cur.asteroids) rocks.push(rock0(seeded));
   seeded = true;
   for (let i = parts.length; i--;) { const q = parts[i]; q.x += q.vx * dt; q.y += q.vy * dt; if ((q.t -= dt) <= 0) parts.splice(i, 1); }

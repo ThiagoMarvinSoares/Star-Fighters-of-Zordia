@@ -14,6 +14,8 @@ interface Slot {
   active?: () => boolean;
   /** casas de acionar: [segundos que faltam, recarga total]; mostra a roda enquanto falta */
   cooldown?: () => [left: number, total: number];
+  /** casas com cargas: quantas estão prontas (número no canto); null = não mostra */
+  charges?: () => number | null;
   use: () => void;
 }
 
@@ -27,19 +29,22 @@ const bestIcon = (type: ModType, fallback: string) => {
   return u ? `<img src="${u}" alt="">` : k ? fallback : '';
 };
 
+const ready = () => p.mload.filter(v => v <= 0).length; // cargas de míssil prontas
 // casa i responde à tecla i+1 (a décima responde à tecla 0)
 const SLOTS: (Slot | undefined)[] = [
   // acesa sempre que os lasers estão liberados para atirar: ligados aqui (ou no Espaço) ou pela mira automática (T)
   {name: 'Canhões', icon: () => bestIcon('laser', CANNON) || CANNON, active: () => p.firing || p.auto, use: () => { p.firing = !p.firing; }},
-  // vazia = nenhum míssil equipado
-  {name: 'Mísseis', icon: () => bestIcon('missile', CANNON), cooldown: () => [best('missile') ? Math.max(0, p.mcd) : 0, MISSILE_CD], use: () => { p.launch = true; }},
+  // vazia = nenhum míssil equipado. O número no canto são as cargas prontas; sem nenhuma, a roda conta os segundos até a
+  // próxima voltar.
+  {name: 'Mísseis', icon: () => bestIcon('missile', CANNON), charges: () => p.mload.length ? ready() : null,
+   cooldown: () => [p.mload.length && !ready() ? Math.min(...p.mload) : 0, MISSILE_CD], use: () => { p.launch = true; }},
 ];
 
 const el = document.createElement('div');
 el.id = 'hotbar';
 el.innerHTML = Array.from({length: 10}, (_, i) => {
   const s = SLOTS[i];
-  return `<button data-i="${i}" tabindex="-1" ${s ? `title="${s.name}"` : 'disabled'}><i></i><b></b><span>${(i + 1) % 10}</span></button>`;
+  return `<button data-i="${i}" tabindex="-1" ${s ? `title="${s.name}"` : 'disabled'}><i></i><b></b><em></em><span>${(i + 1) % 10}</span></button>`;
 }).join('');
 document.body.append(el);
 
@@ -53,13 +58,15 @@ el.addEventListener('click', ev => {
 export function useSlot(i: number) { SLOTS[i]?.use(); }
 
 // chamado a cada quadro: acende as casas ligadas, troca o ícone quando o equipamento muda e gira a roda de recarga
-const lit: boolean[] = [], shown: string[] = [], wheel: string[] = [];
+const lit: boolean[] = [], shown: string[] = [], wheel: string[] = [], count: (number | null)[] = [];
 export function syncHotbar() {
   SLOTS.forEach((s, i) => {
     const on = !!s?.active?.(), icon = s?.icon() ?? '', [left, total] = s?.cooldown?.() ?? [0, 1];
     const cd = left > 0 ? `${Math.round(left / total * 360)}|${Math.ceil(left)}` : ''; // ângulo da roda | segundos
     if (on !== lit[i]) { lit[i] = on; el.children[i].classList.toggle('on', on); }
     if (icon !== shown[i]) { shown[i] = icon; el.children[i].querySelector('i')!.innerHTML = icon; }
+    const n = s?.charges?.() ?? null;
+    if (n !== count[i]) { count[i] = n; el.children[i].querySelector('em')!.textContent = n === null ? '' : String(n); }
     if (cd !== wheel[i]) {
       wheel[i] = cd;
       const b = el.children[i].querySelector('b')!, [deg, secs] = cd.split('|');

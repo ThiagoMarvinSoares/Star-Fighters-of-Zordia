@@ -1,20 +1,25 @@
 // Áudio: toca o que a simulação registrou no quadro (events), com os arquivos de public/sfx/ (pacote
 // "Sci-Fi Sounds" da Kenney, domínio público). Enquanto um arquivo não carregou (ou se o navegador não toca .ogg),
 // cai num som sintetizado equivalente.
+import { MODS } from '../game/data.ts';
 import type { ModKey } from '../game/data.ts';
 import { events, p } from '../game/state.ts';
 import { clamp, rnd } from '../game/util.ts';
 
 const HEAR = 1000; // distância até onde se ouve um evento; o volume cai até zero nela
 const MAX_PER_FRAME = 8;
+/** volume dos disparos (lasers e mísseis, do jogador e dos inimigos) em relação ao resto; 1 = como era no começo */
+const GUNS = .65;
 
 // grupos de sons: nome -> quantas variações existem (arquivos <nome>_000.ogg, _001.ogg, ...)
-const BANK = {laserSmall: 5, laserLarge: 5, forceField: 5, impactMetal: 5,
+const BANK = {laserSmall: 5, laserLarge: 5, thrusterFire: 2, forceField: 5, impactMetal: 5,
               explosionCrunch: 5, lowFrequency_explosion: 2};
 type Sfx = keyof typeof BANK;
 // som de cada laser do jogador: [grupo, velocidade]. Velocidade menor = mais grave e pesado.
-const SHOT: Record<string, [Sfx, number]> = {L1: ['laserSmall', .9], L2: ['laserLarge', 1.15], L3: ['laserLarge', .8],
-  M1: ['laserLarge', .4], M2: ['laserLarge', .4], M3: ['laserLarge', .35], M4: ['laserLarge', .3]}; // míssil: o mesmo som, bem grave, até haver um próprio
+const SHOT: Record<string, [Sfx, number]> = {L1: ['laserSmall', .9], L2: ['laserLarge', 1.15], L3: ['laserLarge', .8]};
+// Lançamento de míssil: som de rojão saindo. Um sopro curto de foguete (o começo do "thrusterFire" do pacote) com um
+// assobio que sobe por cima. O número é a velocidade do sopro: os mísseis maiores soam mais graves.
+const LAUNCH: Record<string, number> = {M1: 1.3, M2: 1.2, M3: 1.1, M4: 1};
 const ENEMY_SHOT: [Sfx, number] = ['laserLarge', .65]; // o mesmo laser pesado, bem mais grave
 
 let ac: AudioContext | undefined, master: GainNode, hiss: AudioBuffer;
@@ -52,13 +57,15 @@ addEventListener('keydown', unlock);
 
 // ---------- arquivos ----------
 // toca uma variação sorteada do grupo; devolve false se o grupo ainda não carregou
-function sample(a: AudioContext, name: Sfx, vol: number, pan: number, rate = 1) {
+// dur = toca só os primeiros dur segundos, sumindo no fim (para tirar um som curto de um arquivo comprido)
+function sample(a: AudioContext, name: Sfx, vol: number, pan: number, rate = 1, dur?: number) {
   const list = buffers[name];
   if (!list?.length) return false;
   const s = a.createBufferSource(), g = a.createGain(), pn = a.createStereoPanner();
   s.buffer = list[Math.random() * list.length | 0]; s.playbackRate.value = rate;
   g.gain.value = vol; pn.pan.value = pan;
   s.connect(g).connect(pn).connect(master); s.start();
+  if (dur) { const t = a.currentTime; g.gain.setValueAtTime(vol, t + dur * .45); g.gain.exponentialRampToValueAtTime(.001, t + dur); s.stop(t + dur); }
   return true;
 }
 
@@ -104,13 +111,19 @@ export function playEvents() {
     if (near <= 0 || ++n > MAX_PER_FRAME) continue;
     const pan = clamp(dx / 700, -1, 1), k = rnd(.94, 1.06); // k varia o tom para sons seguidos não soarem idênticos
     if (e.kind === 'shot') {
-      const [name, rate] = e.mine ? SHOT[e.mod as ModKey] ?? SHOT.L1 : ENEMY_SHOT;
-      if (sample(ac, name, (e.mine ? .5 : .32) * near, pan, rate * k)) { // + um grave curto por baixo, para o tiro ter peso
-        tone(ac, 'sine', 170 * k, 50, .13, (e.mine ? .3 : .26) * near, pan);
+      if (e.mine && e.mod && MODS[e.mod].type === 'missile') {
+        const rate = (LAUNCH[e.mod] ?? 1) * k;
+        if (!sample(ac, 'thrusterFire', .55 * GUNS * near, pan, rate, .75)) noise(ac, 900, 3200, .6, .3 * GUNS * near, pan); // sopro
+        tone(ac, 'sine', 480 * rate, 1350 * rate, .5, .05 * GUNS * near, pan); // assobio subindo, baixinho
         continue;
       }
-      if (e.mine) tone(ac, 'sawtooth', 1100 * k, 200 * k, .14, .22 * near, pan);
-      else tone(ac, 'square', 520 * k, 110 * k, .18, .12 * near, pan);
+      const [name, rate] = e.mine ? SHOT[e.mod as ModKey] ?? SHOT.L1 : ENEMY_SHOT;
+      if (sample(ac, name, (e.mine ? .5 : .32) * GUNS * near, pan, rate * k)) { // + um grave curto por baixo, para o tiro ter peso
+        tone(ac, 'sine', 170 * k, 50, .13, (e.mine ? .3 : .26) * GUNS * near, pan);
+        continue;
+      }
+      if (e.mine) tone(ac, 'sawtooth', 1100 * k, 200 * k, .14, .22 * GUNS * near, pan);
+      else tone(ac, 'square', 520 * k, 110 * k, .18, .12 * GUNS * near, pan);
     }
     else if (e.kind === 'hit') {
       if (e.shielded) { // tiro absorvido pelo escudo

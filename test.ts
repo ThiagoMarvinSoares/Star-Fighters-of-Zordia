@@ -1,6 +1,6 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { SHIPS, MODS, ORES, ENEMIES, START, CLEAR, COMBAT, ACCURACY, MISSILE_CD, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
+import { SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MISSILE_GAP, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
 import { parseSave, world, best, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
@@ -24,10 +24,12 @@ const frames = (n: number) => { for (let i = 0; i < n; i++) update(.016); };
 const mine = () => shots.filter(q => q.src === p);
 const nearest = (key: EnemyKey) => enemies.filter(e => e.t.key === key).sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
 const park = (e: Enemy, d: number) => { p.x = p.tx = e.x + d; p.y = p.ty = e.y; };
+/** muda um inimigo de lugar, com casa e tudo (senão ele se acharia longe de casa e voltaria) */
+const put = (e: Enemy, x: number, y: number) => { e.x = e.wx = e.hx = x; e.y = e.wy = e.hy = y; e.back = false; };
 // Começo de cada bloco que roda a simulação: o jogador volta a um estado conhecido (parado onde está, inteiro, sem
 // alvo, armas e feixe desligados) e somem tiros, partículas e perseguições deixados pelo bloco anterior.
 const reset = () => {
-  Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: false, mining: null, beam: false, cd: 0, mcd: 0, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
+  Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: false, mining: null, beam: false, cd: 0, mcd: 0, mload: [], mleft: true, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
   shots.length = 0; parts.length = 0;
   for (const e of enemies) e.hostile = false;
 };
@@ -86,7 +88,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
   type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[] };
   const ships = keys(SHIPS), sum = (l: ModKey[]) => l.reduce((a, m) => a + MODS[m].val, 0);
   const income = (k: Kit) => { // créditos por minuto
-    const dps = (sum(k.laser) + sum(k.missile) / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
+    const dps = (sum(k.laser) + sum(k.missile) * MISSILE_CHARGES / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
     return Math.max(0, ...ENEMIES.map(e => {
       const fight = (e.hp + e.sh) / dps, taken = e.dmg / 1.3 * fight;
       if (taken > sh + .35 * hp) return 0; // não aguenta caçar esse em sequência
@@ -113,7 +115,8 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
     const inc = income(kit), ehp = (k: Kit) => SHIPS[k.ship].hp + sum(k.shield);
     const waitFor = (cost: number) => Math.max(0, cost - bank) / inc;
     opts.sort((a, b) => (income(b[1]) - inc) / b[0] - (income(a[1]) - inc) / a[0] || (ehp(b[1]) - ehp(a[1])) / b[0] - (ehp(a[1]) - ehp(kit)) / a[0] || a[0] - b[0]);
-    const [cost, nextKit] = opts.find(o => waitFor(o[0]) < 8) ?? opts[0];
+    // a 1ª compra é a melhor entre as que os créditos iniciais já pagam (ninguém começa o jogo esperando)
+    const [cost, nextKit] = (n === 0 ? opts.find(o => waitFor(o[0]) === 0) : undefined) ?? opts.find(o => waitFor(o[0]) < 8) ?? opts[0];
     const wait = waitFor(cost);
     if (n === 0) assert.equal(wait, 0, 'a primeira compra tem de caber nos créditos iniciais');
     worst = Math.max(worst, wait); bank = Math.max(0, bank - cost); kit = nextKit;
@@ -179,26 +182,45 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   e.hp = e.t.hp; p.hp = stats().maxHp; p.firing = false; p.target = null; shots.length = 0;
 }
 
-// mísseis: lançados a pedido contra o alvo travado, um por módulo; têm recarga, causam o dano cheio quando acertam e
-// erram com a mesma chance dos lasers (aqui a Mira Mk3 garante o acerto; sem mira, parte deles erra)
+// mísseis: cada módulo tem 2 cargas; um aperto lança uma, contra o alvo travado, alternando esquerda e direita; cada
+// carga volta sozinha depois de MISSILE_CD; causam o dano cheio quando acertam e erram com a mesma chance dos lasers
 {
   reset();
-  const keep = [...save.mods], e = nearest('raider'), flying = () => shots.filter(q => q.missile).length;
-  shots.length = 0; park(e, 300); p.target = e; p.firing = false; p.auto = false; p.mcd = 0; e.hp = e.t.hp; e.sh = e.t.sh; p.hp = 1e9;
-  p.launch = true; frames(1);
-  assert(!flying() && !p.launch, 'sem míssil equipado não lança');
-  save.mods.push('M1', 'A3'); assert.equal(best('missile'), 'M1'); assert.equal(best('laser'), 'L1');
-  p.launch = true; frames(1);
-  assert.equal(flying(), 1);
-  p.launch = true; frames(1);
-  assert.equal(flying(), 1, 'recarga: não lança de novo em seguida');
-  for (let i = 0; i < 200 && flying(); i++) { park(e, 300); update(.016); }
-  assert.equal(e.hp + e.sh, e.t.hp + e.t.sh - MODS.M1.val);
+  const keep = [...save.mods], e = nearest('raider'), flying = () => shots.filter(q => q.missile);
+  const wait = (n: number) => { for (let i = 0; i < n; i++) { park(e, 560); p.target = e; p.hp = 1e9; update(.016); } }; // de longe: os mísseis ficam mais de 1 s no ar
+  const press = () => { p.launch = true; wait(1); }, gap = Math.ceil(MISSILE_GAP / .016) + 1; // gap = quadros do intervalo mínimo
+  e.hp = 1e9; e.sh = e.t.sh; p.target = e;
+  press();
+  assert(!flying().length && !p.launch && !p.mload.length, 'sem míssil equipado não lança');
+  save.mods.push('M1', 'A3'); assert.equal(best('missile'), 'M1'); assert.equal(best('laser'), 'L1'); // a Mira Mk3 garante o acerto
+  const tot0 = e.hp + e.sh;
+  press();
+  assert.deepEqual([flying().length, p.mload.filter(v => v > 0).length], [1, 1], 'um aperto, uma carga');
+  press();
+  assert.equal(flying().length, 1, 'intervalo mínimo: o segundo aperto, colado no primeiro, não lança');
+  wait(gap); press();
+  assert.deepEqual([flying().length, p.mload.filter(v => v > 0).length], [2, 2], 'segunda carga');
+  // um de cada lado da nave: os pontos de saída são espelhados (o jogador aponta para o alvo, à esquerda dele no mapa)
+  const [a, b] = flying();
+  assert(a.hard[2] < 0 && b.hard[2] > 0 && a.lane! < 0 && b.lane! > 0, 'o primeiro sai da esquerda, o segundo da direita');
+  wait(gap); press();
+  assert.equal(flying().length, 2, 'sem carga pronta não lança');
+  for (let i = 0; i < 200 && flying().length; i++) wait(1);
+  assert.equal(e.hp + e.sh, tot0 - 2 * MODS.M1.val, 'os dois acertam com o dano cheio');
+  // recarga: cada carga volta sozinha, MISSILE_CD depois de gasta
+  for (let i = 0; i < (MISSILE_CD - 1.5) / .05; i++) { park(e, 300); update(.05); }
+  assert.equal(p.mload.filter(v => v <= 0).length, 0, 'ainda recarregando');
+  for (let i = 0; i < 2 / .05; i++) { park(e, 300); update(.05); }
+  assert.equal(p.mload.filter(v => v <= 0).length, 2, 'as duas cargas voltaram');
+  // dois módulos: quatro cargas, e as do melhor míssil saem primeiro
+  { const ship0 = save.ship; save.ship = 'cruiser'; save.mods.push('M2'); wait(gap); press();
+    assert.equal(p.mload.length, 4); assert.equal(flying()[0].mod, 'M2');
+    save.mods.splice(save.mods.indexOf('M2'), 1); save.ship = ship0; shots.length = 0; wait(1); }
   save.mods.pop(); // sem a mira: em 40 lançamentos, alguns erram e alguns acertam
   let hits = 0;
   for (let n = 0; n < 40; n++) {
-    e.hp = 1e9; const before = e.hp + e.sh; p.mcd = 0; p.launch = true; // vida + escudo: o acerto pode parar no escudo
-    for (let i = 0; i < 200 && (i < 2 || flying()); i++) { park(e, 300); p.target = e; update(.016); }
+    e.hp = 1e9; const before = e.hp + e.sh; p.mcd = 0; p.mload.fill(0); p.launch = true; // vida + escudo: o acerto pode parar no escudo
+    for (let i = 0; i < 200 && (i < 2 || flying().length); i++) { park(e, 300); p.target = e; update(.016); }
     if (e.hp + e.sh < before) hits++;
   }
   assert(hits > 18 && hits < 40, `acertos sem mira: ${hits}/40`);
@@ -280,7 +302,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   reset();
   const e = nearest('drone');
   shots.length = 0; p.x = p.tx = BASE.x + 400; p.y = p.ty = BASE.y; p.target = null; p.cd = 0; p.auto = true;
-  e.x = e.wx = p.x + 200; e.y = e.wy = p.y; e.hostile = false; // pode ter ficado hostil no teste anterior
+  put(e, p.x + 200, p.y); e.hostile = false; // pode ter ficado hostil no teste anterior
   frames(5);
   assert(!p.target && !mine().length && !e.hostile);
   p.target = e; p.firing = true; frames(5);
@@ -293,13 +315,17 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
 {
   reset();
   const e = nearest('raider');
-  e.x = e.wx = BASE.x + BASE.r + 260; e.y = e.wy = BASE.y; e.hp = e.t.hp; e.sh = e.t.sh; e.cd = 0; // logo além da faixa onde inimigo não entra
+  put(e, BASE.x + BASE.r + 260, BASE.y); e.hp = e.t.hp; e.sh = e.t.sh; e.cd = 0; // logo além da faixa onde inimigo não entra
   p.x = p.tx = BASE.x + BASE.r + 20; p.y = p.ty = BASE.y; p.target = e; p.firing = true; // um passo fora da base
-  for (let i = 0; i < 80 && e.hp + e.sh >= e.t.hp + e.t.sh; i++) frames(1); // atira até ferir o inimigo
+  for (let i = 0; i < 600 && e.hp + e.sh >= e.t.hp + e.t.sh; i++) { p.hp = Math.max(p.hp, 500); frames(1); } // atira até ferir o inimigo (uma salva inteira pode errar)
   assert(e.hp + e.sh < e.t.hp + e.t.sh && e.hostile && p.fight > COMBAT - 2, 'o combate começa ao atirar');
-  p.firing = false; p.target = null; p.x = p.tx = BASE.x + BASE.r - 30; shots.length = 0; e.cd = 0; // volta para dentro da base
-  const hp0 = p.hp + p.sh;
-  for (let i = 0; i < 200; i++) { p.hp = Math.max(p.hp, 500); frames(1); } // ~3 s dentro da base, sem morrer
+  p.x = p.tx = BASE.x + BASE.r - 30; shots.length = 0; e.cd = 0; p.cd = 0; p.mcd = 0; // volta para dentro da base, ainda mirando e atirando
+  const hp0 = p.hp + p.sh, keepM = [...save.mods]; save.mods.push('M1');
+  let fired = 0;
+  for (let i = 0; i < 200; i++) { p.hp = Math.max(p.hp, 500); p.launch = true; frames(1); fired += mine().length; } // ~3 s dentro da base, sem morrer
+  save.mods.length = 0; save.mods.push(...keepM);
+  assert.equal(fired, 0, 'de dentro da base o jogador não atira nem lança mísseis, mesmo em combate');
+  p.firing = false; p.target = null;
   assert(atBase() && p.fight > 0 && e.hostile, 'dentro da base, ainda em combate');
   assert(p.hp + p.sh < hp0, 'o inimigo continua acertando quem entrou na base em combate');
   assert(e.hp + e.sh < e.t.hp + e.t.sh, 'e não se recupera enquanto a luta dura');
@@ -320,10 +346,13 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
 {
   reset();
   const e = nearest('raider');
-  p.x = p.tx = BASE.x + BASE.r + 30; p.y = p.ty = BASE.y; p.target = null; p.hp = 1e9; // jogador como isca, sem morrer
-  e.x = e.wx = BASE.x - 800; e.y = e.wy = BASE.y + 60; e.hostile = true; // do outro lado: o caminho reto passa por cima da base
+  p.x = p.tx = BASE.x; p.y = p.ty = BASE.y + BASE.r + 30; p.target = null; p.hp = 1e9; // jogador como isca, logo abaixo da zona segura, sem morrer
+  put(e, BASE.x - 720, BASE.y); e.hostile = true; // ao lado da base: o caminho reto até o jogador passa por dentro da faixa proibida
   for (let i = 0; i < 1000; i++) { update(.016); for (const o of enemies) assert(Math.hypot(o.x - BASE.x, o.y - BASE.y) >= KEEP_OUT - 1e-6); }
   assert(Math.hypot(e.x - p.x, e.y - p.y) < 300); // contornou a base pela borda e chegou ao jogador
+  // casa colada na base, sem nenhum ponto válido em volta para vagar: ele fica parado em casa, e a simulação não trava
+  put(e, BASE.x - 720, BASE.y); e.hostile = false; p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; frames(50);
+  assert(e.x === BASE.x - 720 && e.y === BASE.y);
   p.hp = stats().maxHp; shots.length = 0;
 }
 
@@ -343,6 +372,42 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   for (let i = 0; i < 40; i++) update(.05);
   assert.equal(bosses().length, 1);
   p.hp = stats().maxHp; shots.length = 0;
+}
+
+// população por faixas: cada tipo tem a cota dele (mix) e vive na faixa de distância dele, os fracos perto da base;
+// quem morre é reposto por outro do mesmo tipo, na mesma faixa
+{
+  reset();
+  const count = (t: typeof ENEMIES[number]) => enemies.filter(e => e.t === t).length, fromBase = (e: {hx: number; hy: number}) => Math.hypot(e.hx - BASE.x, e.hy - BASE.y);
+  assert.deepEqual(ENEMIES.map(count), M.mix, 'a cota de cada tipo');
+  const avg = ENEMIES.map(t => { const l = enemies.filter(e => e.t === t).map(fromBase); return l.reduce((a, b) => a + b, 0) / l.length; });
+  for (let i = 1; i < avg.length; i++) assert(avg[i] > avg[i - 1], `tipo ${i} mais longe da base que o ${i - 1}: ${avg.map(Math.round)}`);
+  assert(enemies.filter(e => e.t === ENEMIES[0]).every(e => fromBase(e) < 2300), 'os mais fracos nascem perto da base');
+  assert(enemies.filter(e => e.t.key === 'dreadnought').every(e => fromBase(e) > 5000), 'os Dreadnoughts nascem longe dela');
+  // limpar os fracos perto da base: voltam os mesmos tipos, na mesma faixa
+  p.x = p.tx = 3000; p.y = p.ty = 3000;
+  for (let i = enemies.length; i--;) if (enemies[i].t === ENEMIES[0]) enemies.splice(i, 1);
+  frames(1);
+  assert.deepEqual(ENEMIES.map(count), M.mix, 'os destruídos foram repostos pelo mesmo tipo');
+  assert(enemies.filter(e => e.t === ENEMIES[0]).every(e => fromBase(e) < 2300));
+}
+// casa: um inimigo forte atraído em direção à base desiste ao se afastar LEASH de casa, se recupera e volta
+{
+  reset();
+  const e = enemies.find(o => o.t.name === 'Dreadnought')!, h = {x: e.hx, y: e.hy}, dir = Math.atan2(BASE.y - h.y, BASE.x - h.x);
+  put(e, h.x, h.y); e.hp = e.t.hp / 2; e.hostile = true;
+  let far = 0;
+  for (let i = 0; i < 4000; i++) { // o jogador foge na direção da base, sempre 350 à frente dele, como isca
+    p.x = p.tx = e.x + Math.cos(dir) * 350; p.y = p.ty = e.y + Math.sin(dir) * 350; p.hp = 1e9;
+    update(.05); far = Math.max(far, Math.hypot(e.x - h.x, e.y - h.y));
+  }
+  assert(far > LEASH * .8 && far < LEASH + 80, `foi até ${Math.round(far)} de casa`);
+  assert(Math.hypot(e.x - BASE.x, e.y - BASE.y) > 3000, 'não chegou nem perto da base');
+  assert.equal(e.hp, e.t.hp, 'desistiu e se recuperou');
+  p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; shots.length = 0; // o jogador some: ele volta para casa e fica por lá
+  for (let i = 0; i < 2000; i++) update(.05);
+  assert(Math.hypot(e.x - h.x, e.y - h.y) < 600, 'voltou para perto de casa');
+  for (const o of enemies) assert(Math.hypot(o.x - o.hx, o.y - o.hy) < LEASH + 80, `${o.t.name} longe de casa`);
 }
 
 // reposição: quem substitui os inimigos destruídos nasce longe do jogador, nunca na área que ele está limpando

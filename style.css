@@ -3,9 +3,9 @@ canvas{display:block;cursor:crosshair}
 
 /* ---------- hangar ---------- */
 /* o brilho (filter) fica no #shop; o recorte dos cantos (clip-path) no .frame, senão o recorte apagaria o brilho */
-#shop{--c:#3cdcff;--ln:#3cdcff4d;--tx:#cfe6f5;--dim:#7f97b0;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+#shop{--c:#3cdcff;--ln:#3cdcff4d;--tx:#cfe6f5;--dim:#7f97b0;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(var(--ui-shop,1));
   width:min(1000px,96vw);display:none;font:13px/1.35 system-ui,'Segoe UI',sans-serif;color:var(--tx);filter:drop-shadow(0 0 10px #3cdcff59)}
-#shop .frame{position:relative;max-height:90vh;border:1px solid var(--c);background:linear-gradient(#0b1a33f7,#060d1cf7);
+#shop .frame{position:relative;max-height:calc(90vh / var(--ui-shop,1));border:1px solid var(--c);background:linear-gradient(#0b1a33f7,#060d1cf7);
   box-shadow:inset 0 0 30px #3cdcff14;clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px)}
 /* traço da borda nos dois cantos chanfrados */
 #shop .frame::before,#shop .frame::after{content:'';position:absolute;width:23px;height:1px;background:var(--c);transform:rotate(-45deg)}
@@ -28,7 +28,7 @@ canvas{display:block;cursor:crosshair}
 #shop .tabs button{padding:8px 24px;border:1px solid var(--ln);border-bottom:0;color:var(--dim);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
 #shop .tabs button:hover{color:var(--tx);background:#3cdcff10}
 #shop .tabs .on{color:#fff;border-color:var(--c);background:linear-gradient(#3cdcff33,#3cdcff08)}
-#shop main{max-height:calc(90vh - 90px);overflow:auto;box-sizing:border-box;padding:12px}
+#shop main{max-height:calc(90vh / var(--ui-shop,1) - 90px);overflow:auto;box-sizing:border-box;padding:12px}
 #shop small{display:block;color:var(--dim);font-size:12px}
 #shop .pr{color:#ffd45a}
 #shop small.pr{display:flex;align-items:center;gap:4px}
@@ -149,13 +149,14 @@ canvas{display:block;cursor:crosshair}
 #shop .show .note{text-transform:none;letter-spacing:0}
 
 /* ---------- barra de atalhos ---------- */
-#fps{position:fixed;top:8px;right:10px;font:13px monospace;color:#9fc;pointer-events:none}
+#fps{position:fixed;top:8px;right:10px;font:13px monospace;color:#9fc;pointer-events:none;transform:scale(var(--ui,1));transform-origin:top right}
 /* botão do inventário/hangar, à direita da barra de atalhos */
-#bag{position:fixed;left:calc(50% + 271px);bottom:26px;width:46px;height:46px;padding:0;display:grid;place-items:center;background:#0b1220cc;border:1px solid #2a4a6a;border-radius:6px;cursor:pointer}
+/* --ui = tamanho da interface (main.ts): tudo que é fixo na tela cresce a partir do canto onde está preso */
+#bag{position:fixed;left:calc(50% + 271px * var(--ui,1));bottom:calc(26px * var(--ui,1));transform:scale(var(--ui,1));transform-origin:bottom left;width:46px;height:46px;padding:0;display:grid;place-items:center;background:#0b1220cc;border:1px solid #2a4a6a;border-radius:6px;cursor:pointer}
 #bag:hover{border-color:#6cf}
 #bag svg{width:26px;height:26px;fill:none;stroke:#9fd8ff;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 #bag span{position:absolute;left:0;right:0;bottom:-18px;font:12px monospace;color:#789;text-align:center}
-#hotbar{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;gap:6px}
+#hotbar{position:fixed;left:50%;bottom:calc(26px * var(--ui,1));transform:translateX(-50%) scale(var(--ui,1));transform-origin:bottom center;display:flex;gap:6px}
 #hotbar button{position:relative;width:46px;height:46px;padding:0;display:grid;place-items:center;background:#0b1220cc;border:1px solid #2a4a6a;border-radius:6px;cursor:pointer}
 #hotbar button:disabled{opacity:.45;cursor:default}
 #hotbar button:hover:enabled{border-color:#6cf}
@@ -163,6 +164,8 @@ canvas{display:block;cursor:crosshair}
 #hotbar button span{position:absolute;left:0;right:0;bottom:-18px;font:12px monospace;color:#789;text-align:center}
 #hotbar svg,#hotbar img{pointer-events:none}
 #hotbar i{display:grid;place-items:center}
+/* cargas prontas, no canto de cima da casa */
+#hotbar em{position:absolute;right:3px;top:1px;font:bold 12px monospace;font-style:normal;color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;pointer-events:none}
 /* roda de recarga: fatia escura que encolhe no sentido horário, com os segundos no meio */
 #hotbar b{position:absolute;inset:0;border-radius:5px;display:grid;place-items:center;font:bold 17px monospace;color:#fff;text-shadow:0 0 4px #000,0 0 2px #000;pointer-events:none}
 #hotbar img{width:40px;height:40px}
@@ -223,6 +226,6 @@ canvas{display:block;cursor:crosshair}
   background:linear-gradient(var(--a),var(--b));box-shadow:0 0 6px var(--b);transition:width .15s linear}
 .hudp .tr span{position:absolute;right:8px;top:0;line-height:16px;font-size:11px;font-weight:700;color:var(--a);text-shadow:0 0 3px #000,0 0 3px #000}
 .hudp .tr span b{color:#fff}
-#hud{left:12px;bottom:12px;--edge:#3cdcff;--glow:#3cdcff59}
-#target{left:50%;top:12px;transform:translateX(-50%);--edge:#ff6a5a;--glow:#ff6a5a59}
+#hud{left:12px;bottom:12px;transform:scale(var(--ui,1));transform-origin:bottom left;--edge:#3cdcff;--glow:#3cdcff59}
+#target{left:50%;top:12px;transform:translateX(-50%) scale(var(--ui,1));transform-origin:top center;--edge:#ff6a5a;--glow:#ff6a5a59}
 #target .pt{background:#ff6a5a99}

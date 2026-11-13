@@ -5,8 +5,10 @@ export const STATION_R = 130;
 export const RANGE = 600, SHOT_SPEED = 1100;
 /** chance de um tiro do jogador (laser ou míssil) acertar sem computador de mira (0 a 1); os módulos de mira somam pontos percentuais */
 export const ACCURACY = .75;
-/** mísseis: segundos entre lançamentos e velocidade de voo (bem mais lentos que o laser; erram com a mesma chance) */
-export const MISSILE_CD = 6, MISSILE_SPEED = 450;
+/** Mísseis: cada módulo equipado tem MISSILE_CHARGES cargas. Cada aperto lança uma, alternando o lado da nave (esquerda,
+ *  direita), e cada carga gasta volta sozinha em MISSILE_CD segundos. MISSILE_GAP = intervalo mínimo entre dois
+ *  lançamentos (segurar a tecla não esvazia tudo num instante). Voam bem mais devagar que o laser e erram como ele. */
+export const MISSILE_CHARGES = 2, MISSILE_CD = 6, MISSILE_GAP = .25, MISSILE_SPEED = 450;
 /** raio do míssil em voo, na escala das naves: o modelo mede 3x isso de comprimento, com o centro na posição do tiro */
 export const MISSILE_R = 11;
 /** inimigos ficam a esta distância além da zona segura de uma base: com folga, e nunca voam por cima dela */
@@ -16,6 +18,9 @@ export const KEEP_MARGIN = 250;
 export const COMBAT = 10;
 /** raio de um portal: encostar nele leva a nave para outro mapa */
 export const PORTAL_R = 70;
+/** Até onde um inimigo se afasta do ponto onde nasceu, vagando ou perseguindo. Passando disso ele desiste, se recupera
+ *  e volta: é o que impede um inimigo forte de vir parar perto da base, sozinho ou atraído por um jogador. */
+export const LEASH = 1300;
 /** inimigos não renascem a menos disto do jogador: a área que ele limpou fica vazia enquanto ele estiver nela */
 export const CLEAR = 1400;
 
@@ -79,16 +84,16 @@ export const MODS: Record<ModKey, ModDef> = {
   A1: {name: 'Mira Mk1',   type: 'aim',    val: 7,    cost: 400,  model: 'mira1'},
   A2: {name: 'Mira Mk2',   type: 'aim',    val: 13,   cost: 2000, model: 'mira2'},
   A3: {name: 'Mira Mk3',   type: 'aim',    val: 25,   cost: 7000, model: 'mira3'},
-  // míssil: val = dano de cada míssil. Lançado à mão pela barra de atalhos (tecla 2), um por módulo equipado, a cada
-  // MISSILE_CD segundos. O teste de economia conta esse dano supondo que o jogador lança sempre que recarrega.
+  // míssil: val = dano de cada míssil. Lançado à mão pela barra de atalhos (tecla 2), uma carga por aperto. O teste de
+  // economia conta esse dano supondo que o jogador lança sempre que uma carga volta.
   M1: {name: 'Míssil Mk1', type: 'missile', val: 200,  cost: 600,   model: 'missil1'},
   M2: {name: 'Míssil Mk2', type: 'missile', val: 500,  cost: 3000,  model: 'missil2'},
   M3: {name: 'Míssil Mk3', type: 'missile', val: 1100, cost: 10000, model: 'missil3'},
   M4: {name: 'Míssil Mk4', type: 'missile', val: 2400, cost: 25000, model: 'missil4'},
   // minerador: val = minério extraído por segundo pelo feixe. Sem um equipado, a nave não minera.
-  D1: {name: 'Minerador Mk1', type: 'mining', val: 1, cost: 500},
-  D2: {name: 'Minerador Mk2', type: 'mining', val: 2, cost: 2500},
-  D3: {name: 'Minerador Mk3', type: 'mining', val: 4, cost: 8000},
+  D1: {name: 'Minerador Mk1', type: 'mining', val: 3,  cost: 500},
+  D2: {name: 'Minerador Mk2', type: 'mining', val: 7,  cost: 2500},
+  D3: {name: 'Minerador Mk3', type: 'mining', val: 15, cost: 8000},
 };
 /** pasta de cada tipo de módulo dentro de public/models/ */
 export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining'};
@@ -118,9 +123,9 @@ export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 200000, sh: 30
 // ---------- mineração ----------
 // Asteroides espalhados pelo mapa guardam minério. Clicar num deles, com um minerador equipado e a nave a até
 // MINE_RANGE, liga o feixe: o minério passa aos poucos para o porão, até o asteroide se esgotar ou o porão encher.
-// A carga é vendida no hangar. Preços e ritmo foram postos para minerar render um pouco menos que caçar na mesma
-// fase do jogo (é a atividade sem risco): Mk1 em Ametista ~240 cr/min, Mk2 em Turquesa ~1.200, Mk3 em Safira ~5.300,
-// sem contar viagem nem as idas à base para vender.
+// A carga é vendida no hangar. O feixe é rápido de propósito (um asteroide de 40 a 90 unidades sai em segundos com o
+// Mk3): com o feixe ligado, Mk1 em Ametista rende ~720 cr/min, Mk2 em Turquesa ~4.200 e Mk3 em Safira ~19.800. Na
+// prática quem limita a renda é o porão da nave, o tempo de voo entre asteroides e as idas à base para vender.
 export type OreKey = 'purple' | 'cyan' | 'blue';
 export interface OreDef {
   name: string;
@@ -156,6 +161,9 @@ export interface MapDef {
   spawn: { x: number; y: number };
   /** inimigos comuns vivos no mapa (o chefe é contado à parte) */
   population: number;
+  /** Quantos de cada inimigo, em proporção (mesma ordem de enemies); sem isto, partes iguais. A proporção é mantida:
+   *  quem morre é reposto por outro do mesmo tipo, na faixa de distância daquele tipo. */
+  mix?: number[];
   /** do mais fraco ao mais forte: quanto mais longe da base (ou do spawn, se não há base), mais alto na lista */
   enemies: EnemyDef[];
   /** asteroides no mapa, e os minérios deles: do mais comum (perto da base) ao mais valioso (longe) */
@@ -174,6 +182,7 @@ export const MAPS: Record<MapKey, MapDef> = {
     base: {x: 600, y: 600, r: 450},
     spawn: {x: 600, y: 910}, // em frente à estação, não dentro dela
     population: 40, enemies: ENEMIES,
+    mix: [10, 8, 8, 6, 5, 3], // mais inimigos fracos, perto da base, do que fortes, no fundo do mapa
     asteroids: 30, ores: ['purple', 'cyan', 'blue'],
     boss: {def: BOSS, x: 7800, y: 5100, respawn: 300}, // no canto oposto à base
     portals: [],
