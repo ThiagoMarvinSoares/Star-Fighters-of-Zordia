@@ -148,6 +148,9 @@ export function draw() {
 
   // ---------- mundo ----------
   const z = view.zoom, hw = cw / 2 / z, hh = ch / 2 / z; // zoom da câmera; hw x hh = metade da área do mundo que cabe na tela
+  // Nomes de inimigos e asteroides: sempre do mesmo tamanho na tela (13 px vezes o tamanho da interface), por mais longe
+  // que a câmera esteja. Como são desenhados dentro do mundo, que encolhe com o zoom, a fonte cresce na mesma medida.
+  const nameFont = `${13 * ui.scale / z}px monospace`, nameGap = 13 * ui.scale / z;
   ctx.save(); ctx.translate(cw / 2, ch / 2); ctx.scale(z, z); ctx.translate(-p.x, -p.y * TILT);
   // grade do plano (dá a noção de inclinação)
   const G = 250, x0 = Math.max(0, p.x - hw), x1 = Math.min(W, p.x + hw), y0 = Math.max(0, p.y - hh / TILT), y1 = Math.min(H, p.y + hh / TILT);
@@ -200,11 +203,11 @@ export function draw() {
     const ly = e.y * TILT + e.t.r + 10;
     bar(e.x - 25, ly, 50, 4, e.sh / e.t.sh, '#4cf');
     bar(e.x - 25, ly + 5, 50, 4, e.hp / e.t.hp, '#4d4');
-    ctx.font = '12px monospace'; ctx.fillStyle = e.t.color; ctx.fillText(e.t.name, e.x, ly + 22);
+    ctx.font = nameFont; ctx.fillStyle = e.t.color; ctx.fillText(e.t.name, e.x, ly + 10 + nameGap);
   }
   // asteroides: nome do minério e quanto resta; feixe de mineração, tremido, da nave até o asteroide
-  ctx.font = '12px monospace';
-  for (const k of stones) { ctx.fillStyle = ORES[k.ore].color; ctx.fillText(`${ORES[k.ore].name} ${Math.ceil(k.left)}`, k.x, k.y * TILT + k.r * SCALE + 16); }
+  ctx.font = nameFont;
+  for (const k of stones) { ctx.fillStyle = ORES[k.ore].color; ctx.fillText(`${ORES[k.ore].name} ${Math.ceil(k.left)}`, k.x, k.y * TILT + k.r * SCALE + 4 + nameGap); }
   if (p.beam && p.mining) {
     const k = p.mining, t = performance.now() / 60, col = ORES[k.ore].color;
     const arc = fx('spark_07', col), dot = fx('circle_05', col), star = fx('star_08', '#ffffff');
