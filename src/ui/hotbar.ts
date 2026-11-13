@@ -46,8 +46,9 @@ function slots(): Slot[] {
               cooldown: () => [p.mis[j]?.n === 0 ? p.mis[j].t : 0, MISSILE_CD],
               use: () => { p.launch = j; }};
     }),
-    // chip de múltiplos alvos, depois dos mísseis e só com ele equipado: de ligar e desligar
-    ...(stats().multi ? [{name: `Múltiplos alvos (até ${stats().multi + 1})`, icon: () => bestIcon('chip', MULTI), active: () => p.multi, use: () => { p.multi = !p.multi; }}] : []),
+    // chip de múltiplos alvos, depois dos mísseis e só com ele equipado: de ligar e desligar. É o único chip com casa:
+    // o de dano é passivo, vale sempre que está equipado. O ícone é o do próprio Multialvo, não o do "melhor chip".
+    ...(stats().multi ? [{name: `Múltiplos alvos (até ${stats().multi + 1})`, icon: () => modIcon(save.mods.find(k => MODS[k].chip === 'multi'), MULTI), active: () => p.multi, use: () => { p.multi = !p.multi; }}] : []),
   ];
 }
 
