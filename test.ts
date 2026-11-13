@@ -237,7 +237,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert.equal(rocks.length, M.asteroids);
   for (const k of rocks) assert(Math.hypot(k.x - BASE.x, k.y - BASE.y) >= BASE.r + 150 && k.left > 0 && Object.hasOwn(ORES, k.ore), 'asteroide mal colocado');
   for (const k of keys(ORES)) save.cargo[k] = 0;
-  const k = rocks[0]; k.left = 10; p.target = null; p.firing = false;
+  const k = rocks[0]; k.left = 10; k.ore = 'purple'; p.target = null; p.firing = false; // Ametista: qualquer minerador, dureza 1
   const near = (o = k) => { p.x = p.tx = o.x + 100; p.y = p.ty = o.y; p.hp = 1e9; }; // ao lado do asteroide, e sem morrer para quem passar atirando
   near(); p.mining = k; frames(1);
   assert(!p.mining && !p.beam && k.left === 10, 'sem minerador não minera');
@@ -252,6 +252,14 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert.equal(rocks.length, M.asteroids);
   assert(Math.hypot(rocks.at(-1)!.x - p.x, rocks.at(-1)!.y - p.y) >= CLEAR - 5, 'o asteroide de reposição nasce longe do jogador');
   // porão cheio: o feixe desliga e a carga não passa do limite da nave
+  // minério valioso é mais difícil: a Safira só sai com o Mk3, e mais devagar (dureza 3)
+  const kb = rocks[0]; kb.ore = 'blue'; kb.left = 30; near(kb); p.mining = kb; frames(2);
+  assert(!p.mining && !p.beam && kb.left === 30 && stats().mineLevel === 2, 'o Mk2 não extrai Safira');
+  save.mods[save.mods.indexOf('D2')] = 'D3'; assert.equal(stats().mineLevel, 3);
+  const blue0 = save.cargo.blue; p.mining = kb; for (let i = 0; i < 100; i++) { near(kb); update(.01); }
+  assert(p.beam && Math.abs(save.cargo.blue - blue0 - MODS.D3.val / ORES.blue.hard) < 1e-6, `1 s de Mk3 em Safira: ${save.cargo.blue - blue0}`);
+  for (const o of keys(ORES)) save.cargo[o] = 0;
+  p.mining = null; kb.ore = 'purple'; save.mods[save.mods.indexOf('D3')] = 'D2';
   const k2 = rocks[0]; k2.left = 50; save.cargo[k2.ore] += stats().cargo - cargoUsed() - 1;
   p.mining = k2; for (let i = 0; i < 300; i++) { near(k2); update(.01); }
   assert(Math.abs(cargoUsed() - stats().cargo) < 1e-6 && !p.mining && !p.beam && Math.abs(k2.left - 49) < 1e-6, `porão: ${cargoUsed()}`);

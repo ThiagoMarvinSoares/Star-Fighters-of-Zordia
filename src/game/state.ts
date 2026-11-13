@@ -21,7 +21,9 @@ export interface Stats {
   /** chance de cada tiro acertar, de 0 a 1 */
   acc: number;
   /** minério por segundo do feixe (0 = sem minerador) e tamanho do porão */
-  mine: number; cargo: number; slots: Record<ModType, number>; r: number;
+  mine: number; cargo: number;
+  /** nível do melhor minerador equipado (0 = nenhum): diz quais minérios dá para extrair */
+  mineLevel: number; slots: Record<ModType, number>; r: number;
   /** cor da aura do escudo e da chama do motor: a do melhor módulo equipado de cada tipo */
   aura: string; flame: string;
 }
@@ -136,7 +138,7 @@ export function stats(): Stats {
   const s = SHIPS[save.ship], t: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0};
   for (const m of save.mods) t[MODS[m].type] += MODS[m].val;
   const color = (type: ModType) => { const k = best(type); return k && MODS[k].color || '#66ccff'; };
-  return {maxHp: s.hp, maxSh: t.shield, dmg: t.laser, speed: s.speed + t.engine, acc: Math.min(1, ACCURACY + t.aim / 100), mine: t.mining, cargo: s.cargo, slots: s.slots, r: s.r, aura: color('shield'), flame: color('engine')};
+  return {maxHp: s.hp, maxSh: t.shield, dmg: t.laser, speed: s.speed + t.engine, acc: Math.min(1, ACCURACY + t.aim / 100), mine: t.mining, cargo: s.cargo, mineLevel: Math.max(0, ...save.mods.map(m => MODS[m].level ?? 0)), slots: s.slots, r: s.r, aura: color('shield'), flame: color('engine')};
 }
 
 /** a nave está na zona segura de uma base? (só lá se compra, vende e equipa; mapa sem base não tem isso) */

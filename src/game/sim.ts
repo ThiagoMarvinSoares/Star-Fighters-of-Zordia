@@ -191,9 +191,10 @@ export function update(dt: number) {
     const free = st.cargo - cargoUsed();
     if (!rocks.includes(rock)) p.mining = null;
     else if (!st.mine) { p.mining = null; float(p, 'Sem minerador equipado', '#fa4', 2); }
+    else if (st.mineLevel < ORES[rock.ore].level) { p.mining = null; float(p, `${ORES[rock.ore].name} exige Minerador Mk${ORES[rock.ore].level}`, '#fa4', 2.5); }
     else if (free <= 1e-9) { p.mining = null; float(p, 'Porão cheio', '#fa4', 2); }
     else if (dist(p, rock) <= MINE_RANGE) {
-      const got = Math.min(st.mine * dt, rock.left, free);
+      const got = Math.min(st.mine / ORES[rock.ore].hard * dt, rock.left, free); // minério mais duro sai mais devagar
       rock.left -= got; save.cargo[rock.ore] += got; p.beam = true;
       if (rock.left <= 1e-9) { // esgotou: o asteroide se desfaz (outro nasce longe dali, mais abaixo)
         rocks.splice(rocks.indexOf(rock), 1); p.mining = null; p.beam = false;

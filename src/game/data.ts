@@ -46,6 +46,8 @@ export interface ModDef {
   model?: string;
   /** escudo: cor da aura em volta da nave; motor: cor da chama. Sempre '#rrggbb', combinando com o modelo. */
   color?: string;
+  /** minerador: nível (1 = Mk1...). Cada minério exige um nível mínimo (OreDef.level). */
+  level?: number;
 }
 export interface EnemyDef {
   key: EnemyKey; name: string;
@@ -91,9 +93,9 @@ export const MODS: Record<ModKey, ModDef> = {
   M3: {name: 'Míssil Mk3', type: 'missile', val: 1100, cost: 10000, model: 'missil3'},
   M4: {name: 'Míssil Mk4', type: 'missile', val: 2400, cost: 25000, model: 'missil4'},
   // minerador: val = minério extraído por segundo pelo feixe. Sem um equipado, a nave não minera.
-  D1: {name: 'Minerador Mk1', type: 'mining', val: 3,  cost: 500},
-  D2: {name: 'Minerador Mk2', type: 'mining', val: 7,  cost: 2500},
-  D3: {name: 'Minerador Mk3', type: 'mining', val: 15, cost: 8000},
+  D1: {name: 'Minerador Mk1', type: 'mining', val: 3,  cost: 500,  level: 1},
+  D2: {name: 'Minerador Mk2', type: 'mining', val: 7,  cost: 2500, level: 2},
+  D3: {name: 'Minerador Mk3', type: 'mining', val: 15, cost: 8000, level: 3},
 };
 /** pasta de cada tipo de módulo dentro de public/models/ */
 export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining'};
@@ -123,9 +125,10 @@ export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 200000, sh: 30
 // ---------- mineração ----------
 // Asteroides espalhados pelo mapa guardam minério. Clicar num deles, com um minerador equipado e a nave a até
 // MINE_RANGE, liga o feixe: o minério passa aos poucos para o porão, até o asteroide se esgotar ou o porão encher.
-// A carga é vendida no hangar. O feixe é rápido de propósito (um asteroide de 40 a 90 unidades sai em segundos com o
-// Mk3): com o feixe ligado, Mk1 em Ametista rende ~720 cr/min, Mk2 em Turquesa ~4.200 e Mk3 em Safira ~19.800. Na
-// prática quem limita a renda é o porão da nave, o tempo de voo entre asteroides e as idas à base para vender.
+// A carga é vendida no hangar. Quanto mais valioso o minério, mais difícil: exige um minerador de nível maior (level:
+// a Safira só sai com o Mk3) e é mais duro (hard divide a velocidade do feixe). Com o feixe ligado, cada minerador no
+// melhor minério que ele alcança rende: Mk1 em Ametista ~720 cr/min, Mk2 em Turquesa ~2.100, Mk3 em Safira ~6.600.
+// Na prática ainda pesam o porão da nave, o voo entre asteroides e as idas à base para vender.
 export type OreKey = 'purple' | 'cyan' | 'blue';
 export interface OreDef {
   name: string;
@@ -135,11 +138,15 @@ export interface OreDef {
   color: string;
   /** modelo do asteroide: public/models/asteroids/<model>.glb */
   model: string;
+  /** nível mínimo do minerador para extrair este minério (1 = qualquer um, 3 = só o Mk3) */
+  level: number;
+  /** dureza: o feixe extrai val / hard por segundo. Minério mais valioso é mais duro. */
+  hard: number;
 }
 export const ORES: Record<OreKey, OreDef> = {
-  purple: {name: 'Ametista', price: 4,  color: '#b56cff', model: 'asteroide2'},
-  cyan:   {name: 'Turquesa', price: 10, color: '#4fe3e3', model: 'asteroide3'},
-  blue:   {name: 'Safira',   price: 22, color: '#5a8dff', model: 'asteroide4'},
+  purple: {name: 'Ametista', price: 4,  color: '#b56cff', model: 'asteroide2', level: 1, hard: 1},
+  cyan:   {name: 'Turquesa', price: 10, color: '#4fe3e3', model: 'asteroide3', level: 2, hard: 2},
+  blue:   {name: 'Safira',   price: 22, color: '#5a8dff', model: 'asteroide4', level: 3, hard: 3},
 };
 /** alcance do feixe de mineração, e quanto minério um asteroide guarda (sorteado entre os dois valores) */
 export const MINE_RANGE = 260, ROCK_ORE = [40, 90] as const;

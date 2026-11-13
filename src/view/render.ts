@@ -207,7 +207,10 @@ export function draw() {
   }
   // asteroides: nome do minério e quanto resta; feixe de mineração, tremido, da nave até o asteroide
   ctx.font = nameFont;
-  for (const k of stones) { ctx.fillStyle = ORES[k.ore].color; ctx.fillText(`${ORES[k.ore].name} ${Math.ceil(k.left)}`, k.x, k.y * TILT + k.r * SCALE + 4 + nameGap); }
+  for (const k of stones) { // quando o minerador equipado não alcança o minério, o nome diz qual é preciso
+    const o = ORES[k.ore], need = st.mineLevel < o.level ? ` · exige Mk${o.level}` : '';
+    ctx.fillStyle = o.color; ctx.fillText(`${o.name} ${Math.ceil(k.left)}${need}`, k.x, k.y * TILT + k.r * SCALE + 4 + nameGap);
+  }
   if (p.beam && p.mining) {
     const k = p.mining, t = performance.now() / 60, col = ORES[k.ore].color;
     const arc = fx('spark_07', col), dot = fx('circle_05', col), star = fx('star_08', '#ffffff');
