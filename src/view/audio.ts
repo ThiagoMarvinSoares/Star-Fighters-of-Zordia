@@ -14,8 +14,9 @@ const BANK = {laserLarge: 5, laserRetro: 5, forceField: 5, impactMetal: 5,
               explosionCrunch: 5, lowFrequency_explosion: 2};
 type Sfx = keyof typeof BANK;
 // som de cada laser do jogador: [grupo, velocidade]. Velocidade menor = mais grave e pesado.
-// Os lasers usam o "laserRetro" do pacote, o zap clássico de fliperama: mais agudo no Mk1, mais encorpado no Mk3.
-const SHOT: Record<string, [Sfx, number]> = {L1: ['laserRetro', 1.15], L2: ['laserRetro', .95], L3: ['laserRetro', .78],
+// Os lasers usam o "laserRetro" do pacote, o zap de fliperama, tocado bem abaixo da velocidade original para ficar
+// encorpado (na velocidade normal soava fino demais): mais leve no Mk1, mais pesado no Mk3.
+const SHOT: Record<string, [Sfx, number]> = {L1: ['laserRetro', .74], L2: ['laserRetro', .63], L3: ['laserRetro', .53],
   M1: ['laserLarge', .4], M2: ['laserLarge', .4], M3: ['laserLarge', .35], M4: ['laserLarge', .3]}; // míssil: o mesmo som, bem grave, até haver um próprio
 const ENEMY_SHOT: [Sfx, number] = ['laserLarge', .65]; // o mesmo laser pesado, bem mais grave
 
@@ -109,10 +110,13 @@ export function playEvents() {
       const [name, rate] = e.mine ? SHOT[e.mod as ModKey] ?? SHOT.L1 : ENEMY_SHOT;
       if (sample(ac, name, (e.mine ? .5 : .32) * near, pan, rate * k)) {
         const laser = e.mine && !!e.mod && MODS[e.mod].type === 'laser';
-        // laser do jogador: um "piu" sintetizado por cima, descendo do agudo, que é o que dá a cara de laser; o grave por
-        // baixo fica mais discreto. Mísseis e tiros inimigos: só o grave curto, para o tiro ter peso.
-        if (laser) tone(ac, 'sawtooth', 1700 * rate * k, 380 * rate * k, .11, .1 * near, pan);
-        tone(ac, 'sine', 170 * k, 50, .13, (laser ? .14 : e.mine ? .3 : .26) * near, pan);
+        // laser do jogador, em camadas para dar corpo: o zap, o laser pesado do pacote por baixo e um "piu" sintetizado
+        // que desce dos médios para o grave (sem agudos, que deixavam o som fino). Todo tiro leva ainda um grave curto.
+        if (laser) {
+          sample(ac, 'laserLarge', .24 * near, pan, rate * 1.3 * k);
+          tone(ac, 'sawtooth', 620 * rate * k, 110 * rate * k, .16, .09 * near, pan);
+        }
+        tone(ac, 'sine', 170 * k, 50, .13, (e.mine ? .3 : .26) * near, pan);
         continue;
       }
       if (e.mine) tone(ac, 'sawtooth', 1100 * k, 200 * k, .14, .22 * near, pan);
