@@ -10,6 +10,7 @@ import { draw, preloadImages, IMAGES } from './view/render.ts';
 import { syncHotbar } from './ui/hotbar.ts';
 import { playEvents, preloadSounds } from './view/audio.ts';
 import { syncHud } from './ui/hud.ts';
+import { enter } from './ui/account.ts';
 
 const cv = document.getElementById('c') as HTMLCanvasElement;
 // O canvas tem os pixels reais da tela (até 2x), para as naves saírem nítidas em monitores de alta densidade; o jogo
@@ -33,7 +34,7 @@ let titled: string | undefined; // mapa cujo título já foi mostrado
 // contador de quadros por segundo, ligado pela tecla F: serve para medir o desempenho em máquinas diferentes
 const fps = document.createElement('div');
 fps.id = 'fps'; fps.hidden = true; document.body.append(fps);
-addEventListener('keydown', ev => { if (ev.code === 'KeyF') fps.hidden = !fps.hidden; });
+addEventListener('keydown', ev => { if (ev.code === 'KeyF' && !(ev.target instanceof HTMLInputElement)) fps.hidden = !fps.hidden; });
 let frames = 0, since = 0;
 
 // ---------- tela de carregamento ----------
@@ -54,7 +55,9 @@ const tick = () => {
   screen.querySelector<HTMLElement>('i')!.style.width = `${done / total * 100}%`;
   screen.querySelector('p')!.textContent = `Carregando ${done} de ${total}`;
 };
-await Promise.race([Promise.all([preload(models, tick), preloadImages(m0.bg, tick), preloadSounds().then(tick)]), new Promise(ok => setTimeout(ok, WAIT * 1000))]);
+const assets = Promise.race([Promise.all([preload(models, tick), preloadImages(m0.bg, tick), preloadSounds().then(tick)]), new Promise(ok => setTimeout(ok, WAIT * 1000))]);
+await enter(screen); // conta do piloto: entra, cria ou segue sem conta, enquanto os arquivos carregam por trás
+await assets;
 if (screen) { screen.classList.add('done'); screen.addEventListener('transitionend', () => screen.remove()); }
 
 let last = 0;

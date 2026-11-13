@@ -97,9 +97,10 @@ function emptyCargo(from?: unknown): Record<OreKey, number> {
 // progresso salvo no navegador (créditos, nave, módulos, carga). OLD_SAVE_KEY é a chave de quando o jogo se chamava
 // Nebula Raiders: quem já tinha progresso continua de onde parou, e o próximo salvamento grava na chave nova.
 const SAVE_KEY = 'star-fighters-of-zordia', OLD_SAVE_KEY = 'nebula-raiders';
-function load(): Save {
-  try {
-    const s = JSON.parse(localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(OLD_SAVE_KEY) ?? 'null');
+/** Confere um progresso vindo de fora (do navegador ou da conta do piloto) e devolve só o que o jogo conhece;
+ *  null se não serve. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function parseSave(s: any): Save | null {
     if (s && Object.hasOwn(SHIPS, s.ship) && Array.isArray(s.mods) && s.credits >= 0)
       return {credits: +s.credits, ship: s.ship, mods: trim(s.mods, s.ship),
               // save antigo (sem lista de naves): fica com a atual e as mais baratas que ela
@@ -107,11 +108,17 @@ function load(): Save {
                                             : (Object.keys(SHIPS) as ShipKey[]).filter(k => SHIPS[k].cost <= SHIPS[s.ship as ShipKey].cost),
               inv: Array.isArray(s.inv) ? s.inv.filter((m: unknown) => typeof m === 'string' && Object.hasOwn(MODS, m)) : [],
               cargo: emptyCargo(s.cargo)};
-  } catch {}
+  return null;
+}
+function load(): Save {
+  try { const got = parseSave(JSON.parse(localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(OLD_SAVE_KEY) ?? 'null')); if (got) return got; } catch {}
   return {credits: START.credits, ship: START.ship, owned: [START.ship], mods: [...START.mods], inv: [], cargo: emptyCargo()};
 }
 export const save = load();
-export const persist = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} };
+const store = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} };
+/** avisados a cada salvamento (a conta do piloto usa para mandar o progresso ao servidor) */
+export const onPersist: (() => void)[] = [];
+export const persist = () => { store(); for (const f of onPersist) f(); };
 // fechar ou recarregar a aba no meio de um feixe não perde o minério já extraído (a simulação só salva quando ele desliga)
 if (typeof addEventListener === 'function') addEventListener('pagehide', persist);
 
@@ -136,6 +143,17 @@ const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
                           target: null, firing: false, auto: false, launch: false, mcd: 0, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
 export const rocks: Rock[] = [];
+/** Troca o progresso atual pelo que veio de fora (o da conta, ao entrar) e conserta a nave para ele; false se não serve.
+ *  Grava no navegador, mas não avisa onPersist: o servidor acabou de mandar esse mesmo progresso. */
+export function adopt(raw: unknown) {
+  const got = parseSave(raw);
+  if (!got) return false;
+  Object.assign(save, got); store();
+  const st = stats(); p.hp = st.maxHp; p.sh = st.maxSh;
+  return true;
+}
+/** apaga o progresso guardado neste navegador (ao sair de uma conta: ele continua no servidor) */
+export const forget = () => { try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(OLD_SAVE_KEY); } catch {} };
 export const enemies: Enemy[] = [], shots: Shot[] = [], texts: FloatText[] = [], parts: Particle[] = [];
 
 // ---------- hangar: comprar, vender, equipar (as regras; a tela fica em hangar.ts) ----------

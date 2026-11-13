@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { SHIPS, MODS, ORES, ENEMIES, START, CLEAR, COMBAT, ACCURACY, MISSILE_CD, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
-import { world, best, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
+import { parseSave, world, best, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
 import { HARD, ENGINES, mount } from './src/game/models.ts';
 import { update, hit, explode, keepOut, travel } from './src/game/sim.ts';
@@ -499,6 +499,56 @@ for (const dir of keys(FOLDERS)) for (const f of readdirSync(`public/models/${di
   else if (dir === 'asteroids') assert(Math.abs(Math.max(s.x, s.y, s.z) - 2) < 1e-6, f);
   else if (dir === 'weapons') assert(Math.abs(s.x - .46) < 1e-6 && b.max.x > -b.min.x && b.max.y > -b.min.y && s.y < s.x, f);
   else assert(Math.abs(Math.max(s.x, s.z) - .2) < 1e-6 && b.max.y > -b.min.y, f);
+}
+
+// conta do piloto (api/pilot.ts), com um Redis de mentira em memória no lugar do Upstash: criar, sessão por cookie,
+// gravar e ler o progresso, login com código certo e errado, limite de tentativas, login repetido e cookie forjado
+{
+  const db = new Map<string, string>();
+  const run = ([op, key, a, b]: (string | number)[]) => {
+    const k = String(key);
+    if (op === 'GET') return db.get(k) ?? null;
+    if (op === 'SET') { if (b === 'NX' && db.has(k)) return null; db.set(k, String(a)); return 'OK'; }
+    if (op === 'INCR') { db.set(k, String(+(db.get(k) ?? 0) + 1)); return +db.get(k)!; }
+    return 1; // EXPIRE
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => new Response(JSON.stringify((JSON.parse(String(init!.body)) as (string | number)[][]).map(c => ({result: run(c)}))))) as typeof fetch;
+  const api = await import('./api/pilot.ts');
+  const req = (method: string, body?: unknown, cookie = '') => new Request('https://jogo.test/api/pilot', {method, body: body ? JSON.stringify(body) : undefined, headers: {cookie, 'x-forwarded-for': '1.2.3.4'}});
+  const cookieOf = (r: Response) => r.headers.get('set-cookie')!.split(';')[0];
+
+  assert.equal((await api.GET(req('GET'))).status, 503, 'sem banco e sem segredo: contas indisponíveis, não erro');
+  Object.assign(process.env, {KV_REST_API_URL: 'https://redis.test', KV_REST_API_TOKEN: 't', SESSION_SECRET: 'x'.repeat(32)});
+  assert.equal(api.pilotId('  Zé  da Órbita!! '), 'ze-da-orbita');
+  assert.equal((await api.GET(req('GET'))).status, 401, 'sem sessão');
+  assert.equal((await api.POST(req('POST', {action: 'create', login: 'zé', code: 'segredo-longo', save}))).status, 400, 'login curto demais');
+  assert.equal((await api.POST(req('POST', {action: 'create', login: 'Zé Piloto', code: 'curto', save}))).status, 400, 'código curto demais');
+  const made = await api.POST(req('POST', {action: 'create', login: 'Zé Piloto', code: 'segredo-longo', save: {...save, credits: 777}}));
+  assert.equal(made.status, 201); assert.equal((await made.json()).pilot, 'ze-piloto');
+  assert(!db.get('pilot:ze-piloto:code')!.includes('segredo-longo'), 'o código nunca vai para o banco, só o hash');
+  const jar = cookieOf(made);
+  const mine2 = await (await api.GET(req('GET', undefined, jar))).json();
+  assert(mine2.pilot === 'ze-piloto' && mine2.save.credits === 777, 'a sessão lê o progresso');
+  assert.equal((await api.PUT(req('PUT', {save: {...save, credits: 999}}, jar))).status, 200);
+  assert.equal((await (await api.GET(req('GET', undefined, jar))).json()).save.credits, 999);
+  assert.equal((await api.PUT(req('PUT', {save: {...save, credits: 5}}))).status, 401, 'sem sessão não grava');
+  assert.equal((await api.PUT(req('PUT', {save: 'x'.repeat(20000)}, jar))).status, 400, 'progresso inválido');
+  assert.equal((await api.GET(req('GET', undefined, jar.replace(/\w{6}$/, 'abcdef')))).status, 401, 'cookie com assinatura trocada');
+  assert.equal((await api.POST(req('POST', {action: 'create', login: 'ze-piloto', code: 'outro-segredo', save}))).status, 409, 'login já em uso');
+  const wrong = await api.POST(req('POST', {action: 'login', login: 'Zé Piloto', code: 'errado-errado'}));
+  const nobody = await api.POST(req('POST', {action: 'login', login: 'ninguem', code: 'errado-errado'}));
+  assert(wrong.status === 401 && nobody.status === 401 && (await wrong.json()).message === (await nobody.json()).message, 'código errado e login inexistente respondem igual');
+  const back = await api.POST(req('POST', {action: 'login', login: 'ZÉ PILOTO', code: 'segredo-longo'}));
+  assert(back.status === 200 && (await back.json()).save.credits === 999, 'entrar devolve o progresso');
+  for (let i = 0; i < 4; i++) await api.POST(req('POST', {action: 'login', login: 'ze-piloto', code: 'errado-errado'}));
+  assert.equal((await api.POST(req('POST', {action: 'login', login: 'ze-piloto', code: 'segredo-longo'}))).status, 429, 'depois de 5 tentativas, nem o código certo entra');
+  assert((await api.DELETE()).headers.get('set-cookie')!.includes('Max-Age=0'));
+  globalThis.fetch = realFetch;
+  // o progresso que volta do servidor passa pelo mesmo filtro do progresso local
+  assert.equal(parseSave({credits: 5, ship: 'nave-que-nao-existe', mods: []}), null);
+  assert.deepEqual(parseSave({credits: 5, ship: 'scout', mods: ['L1', 'zz'], owned: ['scout'], inv: ['L2', 'xx'], cargo: {purple: 3, ouro: 9}}),
+                   {credits: 5, ship: 'scout', mods: ['L1'], owned: ['scout'], inv: ['L2'], cargo: {purple: 3, cyan: 0, blue: 0}});
 }
 
 console.log('ok');

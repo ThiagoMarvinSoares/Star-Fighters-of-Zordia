@@ -39,6 +39,7 @@ document.getElementById('c')!.addEventListener('wheel', ev => {
 addEventListener('mouseup', () => mouse.held = false);
 
 addEventListener('keydown', ev => {
+  if (ev.target instanceof HTMLInputElement) return; // digitando (login do piloto): as teclas não são comandos do jogo
   const digit = /^Digit(\d)$/.exec(ev.code); // teclas 1..9 e 0 = casas da barra de atalhos
   if (digit) useSlot((+digit[1] + 9) % 10);
   else if (ev.code === 'Space') { ev.preventDefault(); p.firing = !p.firing; }

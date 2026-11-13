@@ -10,6 +10,7 @@ import { keys } from '../game/util.ts';
 import { TILT } from '../view/camera.ts';
 import { createStage, iconOf, onModelLoaded } from '../view/ships3d.ts';
 import { ui } from '../view/audio.ts';
+import { accountHtml, accountAction } from './account.ts';
 
 const el = document.getElementById('shop')!;
 const slotText = (f: (t: ModType) => number) => keys(SLOT).map(t => `${f(t)} ${f(t) === 1 ? SLOT_ONE[t] : SLOT[t]}`).join(' · ');
@@ -223,7 +224,7 @@ export function renderShop() {
   }
   const y = el.querySelector('main')?.scrollTop ?? 0, iy = el.querySelector('.inv')?.scrollTop ?? 0; // re-renderizar não volta a rolagem ao topo
   el.innerHTML = `<div class="frame"><header class="hd">${svg(I.hangar)}<h2>HANGAR</h2>
-    <span class="cr">${svg(I.coin)}${cr(save.credits)}</span><button class="x" data-close title="Fechar (B ou Esc)">${svg(I.close)}</button></header>
+    ${accountHtml()}<span class="cr">${svg(I.coin)}${cr(save.credits)}</span><button class="x" data-close title="Fechar (B ou Esc)">${svg(I.close)}</button></header>
     <nav class="tabs">${keys(TABS).map(k => `<button data-tab="${k}"${k === tab ? ' class="on"' : ''}>${TABS[k][0]}</button>`).join('')}</nav>
     ${atBase() ? '' : '<div class="away">Fora da base: só consulta. Comprar, vender, equipar e trocar de nave só na zona segura.</div>'}
     <main>${TABS[tab][1]()}</main></div>`;
@@ -253,6 +254,7 @@ el.onclick = ev => {
   const b = (ev.target as Element).closest('button'), d = b?.dataset;
   if (!b || b.disabled || !d) return;
   if (d.close !== undefined) return toggleShop(false);
+  if (d.account) return void accountAction(d.account);
   if (d.tab) tab = d.tab as Tab;
   else if (d.from) { // casa do Equipamento: um clique seleciona; duplo clique equipa ou desequipa
     const from = d.from as From, i = +d.i!;
