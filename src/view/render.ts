@@ -13,6 +13,7 @@ import { createStage, hasModel } from './ships3d.ts';
 // ---------- efeitos com imagens: public/fx/<nome>.png, do Particle Pack do Kenney ----------
 // As imagens são brancas com transparência; cada uma é tingida uma vez por cor usada e guardada. Desenhe com a mistura
 // 'lighter', para somar luz. Enquanto o arquivo não carrega, fx() devolve undefined e quem chama usa o traço antigo.
+const FX = ['trace_06', 'star_07', 'scorch_02', 'circle_02', 'circle_05', 'spark_07', 'star_08']; // todas as imagens de efeito usadas abaixo
 const fxImg = new Map<string, HTMLImageElement>(), fxTint = new Map<string, HTMLCanvasElement>();
 function fx(name: string, color: string) {
   let c = fxTint.get(name + color);
@@ -47,6 +48,13 @@ const seen = new WeakSet<object>();
 // uma imagem por arquivo de fundo, carregada na primeira vez que o mapa é desenhado
 const bgs = new Map<string, HTMLImageElement>();
 const bgOf = (file: string) => { let i = bgs.get(file); if (!i) { i = new Image(); i.src = 'bg/' + file; bgs.set(file, i); } return i; };
+/** Carrega de antemão as imagens do desenho (fundo do mapa e efeitos), para nada aparecer aos poucos; tick a cada uma. */
+export function preloadImages(bg: string, tick?: () => void) {
+  const wait = (i: HTMLImageElement) => new Promise<void>(ok => { if (i.complete) ok(); else i.onload = i.onerror = () => ok(); }).then(tick);
+  return Promise.all([wait(bgOf(bg)), ...FX.map(name => { fx(name, '#ffffff'); return wait(fxImg.get(name)!); })]);
+}
+/** quantas imagens preloadImages carrega */
+export const IMAGES = 1 + FX.length;
 const PARALLAX = .08;
 const stars = Array.from({length: 250}, () => ({x: Math.random(), y: Math.random(), d: .1 + Math.random() * .5}));
 
@@ -151,8 +159,9 @@ export function draw() {
   // base
   ctx.textAlign = 'center'; ctx.font = '14px monospace';
   if (BASE) {
-    ctx.strokeStyle = '#2a6'; ctx.setLineDash([8, 8]); ring(BASE, BASE.r); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = '#9fc'; ctx.fillText('BASE (zona segura)', BASE.x, (BASE.y + BASE.r) * TILT - 10);
+    const fight = p.fight > 0; // em combate a zona não protege: a borda fica laranja e avisa
+    ctx.strokeStyle = fight ? '#d73' : '#2a6'; ctx.setLineDash([8, 8]); ring(BASE, BASE.r); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = fight ? '#fb8' : '#9fc'; ctx.fillText(fight ? `BASE (em combate: sem proteção por ${Math.ceil(p.fight)}s)` : 'BASE (zona segura)', BASE.x, (BASE.y + BASE.r) * TILT - 10);
   }
   // portais: dois anéis no chão (o de dentro pulsa) e o nome do mapa de destino
   for (const g of m.portals) {

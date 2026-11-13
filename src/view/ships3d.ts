@@ -137,7 +137,7 @@ export const parseModel = async (glb: ArrayBuffer, kind: ModelKind, basePath = '
 
 // Um molde por modelo; as naves na tela são clones (dividem geometria e material).
 // Começa com o substituto genérico (PLACEHOLDER) e troca pelo .glb quando (e se) o arquivo carregar.
-const cache = new Map<string, THREE.Object3D>(), asked = new Set<string>(), loaded = new Set<string>();
+const cache = new Map<string, THREE.Object3D>(), jobs = new Map<string, Promise<void>>(), loaded = new Set<string>();
 const listeners: (() => void)[] = [];
 const icons = new Map<string, string>(); // fotos dos modelos (data URL), refeitas quando o .glb chega
 let version = 0; // sobe a cada .glb carregado: as naves já na tela são refeitas com o modelo novo
@@ -146,7 +146,12 @@ function template(path: string) {
   if (!t) { cache.set(path, t = PLACEHOLDER); request(path); }
   return t;
 }
-function request(path: string) { if (!asked.has(path)) { asked.add(path); load(path); } }
+// pede o .glb de um modelo (uma vez só); a promessa termina quando ele carregou ou falhou, nunca rejeita
+function request(path: string) { let j = jobs.get(path); if (!j) jobs.set(path, j = load(path)); return j; }
+/** onde fica o .glb de uma nave, inimigo ou estação, dentro de public/models */
+export const pathOf = (key: ModelKey) => PATH[key] ?? `ships/${key}`;
+/** Carrega de antemão os modelos pedidos (tela de carregamento); tick é chamado a cada um que termina. */
+export const preload = (paths: string[], tick?: () => void) => Promise.all(paths.map(q => request(q).then(tick)));
 /** troca o molde de um modelo (ex.: 'weapons/mp1'); as naves na tela são refeitas com ele */
 export function install(path: string, object: THREE.Object3D) {
   cache.set(path, object); loaded.add(path); icons.delete(path); version++;
@@ -223,7 +228,7 @@ export function iconOf(path: string, placeholder = false, px = 256) {
 
 /** nave pronta para a cena (o equipamento não aparece nela: só o casco) */
 export function shipObject(key: ModelKey) {
-  const g = template(PATH[key] ?? `ships/${key}`).clone();
+  const g = template(pathOf(key)).clone();
   g.userData = {key, version};
   return g;
 }

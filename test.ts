@@ -1,6 +1,6 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { SHIPS, MODS, ORES, ENEMIES, START, CLEAR, ACCURACY, MISSILE_CD, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
+import { SHIPS, MODS, ORES, ENEMIES, START, CLEAR, COMBAT, ACCURACY, MISSILE_CD, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
 import { world, best, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
@@ -27,7 +27,7 @@ const park = (e: Enemy, d: number) => { p.x = p.tx = e.x + d; p.y = p.ty = e.y; 
 // Começo de cada bloco que roda a simulação: o jogador volta a um estado conhecido (parado onde está, inteiro, sem
 // alvo, armas e feixe desligados) e somem tiros, partículas e perseguições deixados pelo bloco anterior.
 const reset = () => {
-  Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: false, mining: null, beam: false, cd: 0, mcd: 0, hp: stats().maxHp, sh: stats().maxSh});
+  Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: false, mining: null, beam: false, cd: 0, mcd: 0, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
   shots.length = 0; parts.length = 0;
   for (const e of enemies) e.hostile = false;
 };
@@ -286,6 +286,34 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   p.target = e; p.firing = true; frames(5);
   assert(!mine().length);
   p.auto = p.firing = false;
+}
+
+// combate: quem atirou não fica a salvo ao entrar na base. Enquanto dura o combate os inimigos seguem atirando e a cura
+// rápida não liga; passado o tempo sem atirar nem apanhar, a zona protege de novo e o inimigo que desistiu volta inteiro
+{
+  reset();
+  const e = nearest('raider');
+  e.x = e.wx = BASE.x + BASE.r + 260; e.y = e.wy = BASE.y; e.hp = e.t.hp; e.sh = e.t.sh; e.cd = 0; // logo além da faixa onde inimigo não entra
+  p.x = p.tx = BASE.x + BASE.r + 20; p.y = p.ty = BASE.y; p.target = e; p.firing = true; // um passo fora da base
+  for (let i = 0; i < 80 && e.hp + e.sh >= e.t.hp + e.t.sh; i++) frames(1); // atira até ferir o inimigo
+  assert(e.hp + e.sh < e.t.hp + e.t.sh && e.hostile && p.fight > COMBAT - 2, 'o combate começa ao atirar');
+  p.firing = false; p.target = null; p.x = p.tx = BASE.x + BASE.r - 30; shots.length = 0; e.cd = 0; // volta para dentro da base
+  const hp0 = p.hp + p.sh;
+  for (let i = 0; i < 200; i++) { p.hp = Math.max(p.hp, 500); frames(1); } // ~3 s dentro da base, sem morrer
+  assert(atBase() && p.fight > 0 && e.hostile, 'dentro da base, ainda em combate');
+  assert(p.hp + p.sh < hp0, 'o inimigo continua acertando quem entrou na base em combate');
+  assert(e.hp + e.sh < e.t.hp + e.t.sh, 'e não se recupera enquanto a luta dura');
+  // fora do alcance dele (fundo da base), sem atirar: o combate acaba, a zona volta a proteger e o inimigo se recupera
+  p.x = p.tx = BASE.x; shots.length = 0;
+  for (let i = 0; i < (COMBAT + 1) / .05 && p.fight > 0; i++) update(.05);
+  frames(1);
+  assert(p.fight === 0 && !e.hostile && e.hp === e.t.hp && e.sh === e.t.sh, 'fim do combate: inimigo inteiro de novo');
+  const hurt = p.hp = stats().maxHp / 2; frames(30);
+  assert(p.hp > hurt * 1.15, 'a salvo, a cura rápida liga');
+  // o chefe não se recupera ao desistir: a luta contra ele é em várias investidas
+  const b = enemies.find(o => o.t === BOSS)!; b.hp = 1000; b.hostile = true; frames(1);
+  assert(!b.hostile && b.hp === 1000);
+  b.hp = BOSS.hp;
 }
 
 // inimigos não chegam perto da base: nem perseguindo o jogador que está logo fora da zona segura, nem vagando

@@ -42,6 +42,8 @@ export interface Player extends Body {
   tx: number; ty: number;
   target: Enemy | null;
   firing: boolean; auto: boolean;
+  /** quando atirou pela última vez (relógio do jogo), e quantos segundos de combate ainda restam (0 = fora de combate) */
+  lastShot: number; fight: number;
   /** pedido de lançar os mísseis (barra de atalhos); a simulação atende e apaga */
   launch: boolean;
   /** tempo até poder lançar mísseis de novo */
@@ -132,7 +134,7 @@ export const map = (): MapDef => MAPS[world.map];
 
 const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
-                          target: null, firing: false, auto: false, launch: false, mcd: 0, mining: null, beam: false, cd: 0, lastHit: -99, deaths: 0};
+                          target: null, firing: false, auto: false, launch: false, mcd: 0, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
 export const rocks: Rock[] = [];
 export const enemies: Enemy[] = [], shots: Shot[] = [], texts: FloatText[] = [], parts: Particle[] = [];
 

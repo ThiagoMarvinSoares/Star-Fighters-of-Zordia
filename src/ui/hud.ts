@@ -58,7 +58,7 @@ onModelLoaded(() => { for (const q of panels) q.last.model = ''; }); // um model
 export function syncHud() {
   const st = stats(), t = p.target;
   mine.set({model: save.ship, name: SHIPS[save.ship].name, coin: fmt(save.credits) + ' cr',
-            sub: p.auto ? 'Mira automática' : p.firing ? 'Lasers ativos' : 'Lasers desligados', alert: p.auto || p.firing,
+            sub: (p.auto ? 'Mira automática' : p.firing ? 'Lasers ativos' : 'Lasers desligados') + (p.fight > 0 ? ` · em combate ${Math.ceil(p.fight)}s` : ''), alert: p.auto || p.firing || p.fight > 0,
             hp: p.hp, maxHp: st.maxHp, sh: p.sh, maxSh: st.maxSh});
   const far = t ? dist(p, t) > RANGE : false;
   theirs.set(t && {model: t.t.key, name: t.t.name, coin: fmt(t.t.reward) + ' cr', // a moeda mostra a recompensa

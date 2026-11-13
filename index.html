@@ -5,9 +5,15 @@
 <link rel="stylesheet" href="style.css">
 <canvas id="c"></canvas>
 <div id="shop"></div>
+<!-- tela de carregamento: já aparece com a página, antes de o código do jogo chegar; main.ts atualiza e remove -->
+<div id="loading"><h1>Star Fighters of Zordia</h1><div class="bar"><i></i></div><p>Carregando…</p></div>
 <script>
   // TypeScript não roda direto no navegador: o Vite compila e serve o jogo
   if (location.protocol === 'file:') document.body.append('Rode "npm run dev" nesta pasta e abra o endereço que aparecer');
+  // erro ao iniciar (navegador sem WebGL, por exemplo): a tela de carregamento diz o que houve, em vez de ficar em
+  // "Carregando…" para sempre. Depois que o jogo abre, #loading não existe mais e isto não faz nada.
+  const fail = e => { const t = document.querySelector('#loading p'); if (t) t.textContent = 'Não foi possível iniciar o jogo: ' + (e.message || e.reason?.message || e.reason || 'erro desconhecido'); };
+  addEventListener('error', fail); addEventListener('unhandledrejection', fail);
 </script>
 <script type="module" src="/src/main.ts"></script>
 </html>

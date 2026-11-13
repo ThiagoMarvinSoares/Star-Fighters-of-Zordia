@@ -117,7 +117,7 @@ function oreGroup() {
 }
 function oreDetail(o: NonNullable<typeof oreSel>) {
   const d = ORES[o.ore], total = Math.floor(save.cargo[o.ore]);
-  return `<div class="det" style="--k:${d.color}"><span class="ic">${orePic(o.ore)}</span>
+  return `<div class="det ore" style="--k:${d.color}"><span class="ic">${orePic(o.ore)}</span>
     <div><b>${d.name}</b><small>Pack de ${o.n} · ${total} no porão</small><small class="pr">${svg(I.coin)}${cr(d.price)} por unidade</small></div>
     <div class="btns"><button class="sell" data-do="sellpack" ${off(away())}>Vender pack · ${cr(o.n * d.price)}</button>
       <button class="sell" data-do="sellores" ${off(away())}>Vender tudo · ${cr(cargoValue())}</button></div></div>`;

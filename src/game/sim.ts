@@ -1,5 +1,5 @@
 // Simulação: as regras do jogo. Só altera o estado; não sabe nada de canvas, tela nem teclado.
-import { RANGE, SHOT_SPEED, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, PORTAL_R, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
+import { RANGE, SHOT_SPEED, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, COMBAT, PORTAL_R, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
 import type { EnemyDef, MapKey } from './data.ts';
 import type { ModelKey, ModKey } from './data.ts';
 import { save, persist, stats, cargoUsed, p, enemies, rocks, shots, texts, parts, events, world, map } from './state.ts';
@@ -128,7 +128,14 @@ export function update(dt: number) {
   // portal: encostou, mudou de mapa; o resto do quadro não vale mais (o mapa novo é povoado no próximo)
   for (const g of m.portals) if (dist(p, g) < PORTAL_R) { travel(g.to, g.tx, g.ty); return; }
 
-  const safe = !!base && dist(p, base) < base.r;
+  // Zona segura: dentro da base e fora de combate. Quem atirou ou levou dano há menos de COMBAT segundos continua em
+  // combate mesmo dentro da base: os inimigos seguem atirando e a cura rápida não liga.
+  p.fight = Math.max(0, COMBAT - (now - Math.max(p.lastHit, p.lastShot)));
+  const safe = !!base && dist(p, base) < base.r && p.fight <= 0;
+  // Inimigo que desiste da luta volta inteiro: sem isso dava para ferir, fugir, curar e voltar até vencer qualquer um.
+  // O chefe é a exceção: a luta contra ele é feita em várias investidas, e a vida dele fica entre uma e outra.
+  const calm = (e: Enemy) => { if (e.hostile) { e.hostile = false; if (!boss || e.t !== boss.def) { e.hp = e.t.hp; e.sh = e.t.sh; } } };
+  if (safe) enemies.forEach(calm); // o jogador ficou a salvo: quem o perseguia desiste
   if (now - p.lastHit > 5) p.sh = Math.min(st.maxSh, p.sh + st.maxSh * .08 * dt);
   if (safe || now - p.lastHit > 10) p.hp = Math.min(st.maxHp, p.hp + st.maxHp * (safe ? .2 : .03) * dt);
 
@@ -143,8 +150,8 @@ export function update(dt: number) {
   if (t) {
     const td = dist(p, t);
     if (td > 1500) p.target = null;
-    else if (!safe && (p.firing || p.auto) && td <= RANGE && p.cd <= 0 && st.dmg) { // na base ninguém atira
-      p.cd = 1; t.hostile = true;
+    else if (!safe && (p.firing || p.auto) && td <= RANGE && p.cd <= 0 && st.dmg) { // a salvo na base ninguém atira
+      p.cd = 1; t.hostile = true; p.lastShot = now;
       // um tiro por módulo de laser, cada um saindo do seu ponto de fixação e com o dano do seu módulo
       save.mods.filter(m => MODS[m].type === 'laser').forEach((m, i, l) =>
         shoot(p, st.r, save.ship, i, t, Math.round(MODS[m].val * rnd(.85, 1.15)), '#4cf', i / l.length, m, rand() >= st.acc));
@@ -178,7 +185,7 @@ export function update(dt: number) {
     p.launch = false;
     const ms = save.mods.filter(m => MODS[m].type === 'missile');
     if (t && p.target === t && !safe && ms.length && p.mcd <= 0 && dist(p, t) <= RANGE) {
-      p.mcd = MISSILE_CD; t.hostile = true;
+      p.mcd = MISSILE_CD; t.hostile = true; p.lastShot = now;
       ms.forEach((m, i) => shoot(p, st.r, save.ship, i, t, MODS[m].val, '#fa4', i * .25, m, rand() >= st.acc, true));
     }
   }
@@ -186,7 +193,7 @@ export function update(dt: number) {
   // ---------- IA dos inimigos ----------
   for (const e of enemies) {
     const ed = dist(e, p);
-    if (ed > 1400) e.hostile = false;
+    if (ed > 1400) calm(e); // perdeu o jogador de vista
     if (now - e.lastHit > 6) e.sh = Math.min(e.t.sh, e.sh + e.t.sh * .05 * dt);
     e.cd -= dt;
     if (!safe && (e.hostile || e.t.aggro && ed < Math.max(450, e.t.range ?? 0))) {
@@ -243,9 +250,9 @@ export function update(dt: number) {
     explode(p, st.r); shots.length = 0;
     const SPAWN = MAPS[HOME].spawn; // renasce sempre na base do mapa inicial, esteja onde estiver
     if (world.map !== HOME) travel(HOME, SPAWN.x, SPAWN.y);
-    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, launch: false, mining: null, beam: false});
+    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, launch: false, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
     p.deaths++; // input.ts usa isso para soltar o botão do mouse
-    for (const e of enemies) e.hostile = false;
+    enemies.forEach(calm);
     float(p, 'Nave destruída — reparada na base', '#fff', 3);
   }
 

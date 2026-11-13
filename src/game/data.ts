@@ -11,6 +11,9 @@ export const MISSILE_CD = 6, MISSILE_SPEED = 450;
 export const MISSILE_R = 11;
 /** inimigos ficam a esta distância além da zona segura de uma base: com folga, e nunca voam por cima dela */
 export const KEEP_MARGIN = 250;
+/** Segundos "em combate" depois de o jogador atirar ou levar dano. Enquanto dura, a zona segura da base não o protege
+ *  (os inimigos seguem atirando e a cura rápida não liga): entrar na base no meio da luta não salva ninguém. */
+export const COMBAT = 10;
 /** raio de um portal: encostar nele leva a nave para outro mapa */
 export const PORTAL_R = 70;
 /** inimigos não renascem a menos disto do jogador: a área que ele limpou fica vazia enquanto ele estiver nela */
