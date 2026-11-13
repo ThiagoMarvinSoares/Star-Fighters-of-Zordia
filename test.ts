@@ -1,8 +1,8 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
+import { BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
-import { parseSave, world, best, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
+import { parseSave, world, best, drops, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
 import { HARD, ENGINES, mount } from './src/game/models.ts';
 import { update, hit, explode, keepOut, travel } from './src/game/sim.ts';
@@ -97,7 +97,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
   };
   const options = (k: Kit) => { // [custo líquido, kit resultante]
     const out: [number, Kit][] = [];
-    for (const m of keys(MODS)) {
+    for (const m of keys(MODS).filter(k => !MODS[k].drop)) { // itens de espólio não se compram
       const t = MODS[m].type, cur = k[t];
       if (cur.length < SHIPS[k.ship].slots[t]) out.push([MODS[m].cost, {...k, [t]: [...cur, m]}]);
       else {
@@ -419,7 +419,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   p.hp = stats().maxHp; shots.length = 0;
 }
 
-// chefe, no papel: a última nave com tudo Mk3 vence sozinha numa investida, com folga; a penúltima, igualmente equipada,
+// chefe, no papel: a última nave com tudo Mk3 vence sozinha numa investida, por pouco; a penúltima, igualmente equipada,
 // não consegue de uma vez. Mexeu na vida ou no dano do chefe, nas naves ou nos itens Mk3? Esta conta diz se ainda vale.
 {
   const duel = (ship: ShipKey) => { // quantas vezes o tempo que a nave aguenta cobre o tempo que ela leva para matar
@@ -430,7 +430,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
     return last / kill;
   };
   const ships = keys(SHIPS), top = ships[ships.length - 1], second = ships[ships.length - 2];
-  assert(duel(top) > 1.15 && duel(top) < 1.6, `${top} contra o chefe: aguenta ${duel(top).toFixed(2)}x o tempo de matar`);
+  assert(duel(top) > 1.03 && duel(top) < 1.12, `${top} contra o chefe tem de ser apertado: aguenta ${duel(top).toFixed(2)}x o tempo de matar`);
   assert(duel(second) < 1, `${second} não deveria vencer de uma vez: ${duel(second).toFixed(2)}x`);
 }
 
@@ -443,6 +443,19 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   b.hp = 1; b.sh = 0; b.lastHit = Infinity; // sem regenerar o escudo enquanto os tiros não chegam
   for (let i = 0; i < 3000 && bosses().length; i++) { park(b, 150); p.target = b; p.firing = true; p.hp = 1e9; update(.016); } // vida reposta a cada quadro: o chefe não pode matar o jogador antes
   assert(!bosses().length && save.credits === c0 + BOSS.reward);
+  // espólio: o chefe deixa um cubo com o chip de dano; passar por cima leva para o inventário
+  assert.deepEqual(drops.map(d => d.item), [BOSS_DROP]);
+  const inv0 = save.inv.length, cube = drops[0];
+  p.x = p.tx = cube.x + PICKUP_R + 40; p.y = p.ty = cube.y; frames(1);
+  assert(drops.length === 1 && save.inv.length === inv0, 'de longe não recolhe');
+  p.tx = cube.x; for (let i = 0; i < 100 && drops.length; i++) frames(1);
+  assert(!drops.length && save.inv.at(-1) === BOSS_DROP && save.inv.length === inv0 + 1, 'recolhido ao passar por cima');
+  // o chip de dano: +20% em lasers e mísseis; dois equipados não somam
+  { const mods0 = [...save.mods], base0 = stats();
+    save.mods.push(save.inv.pop()!);
+    assert(stats().boost === 1.2 && stats().dmg === Math.round(base0.dmg * 1.2));
+    save.mods.push('C2'); assert.equal(stats().boost, 1.2, 'dois chips de dano não somam');
+    save.mods.length = 0; save.mods.push(...mods0); }
   p.firing = false; p.target = null; p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; // espera na base, a salvo
   const wait = BOSS_RESPAWN / .05;
   for (let i = 0; i < wait - 20; i++) update(.05);

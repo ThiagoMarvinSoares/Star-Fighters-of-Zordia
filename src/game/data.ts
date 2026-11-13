@@ -26,7 +26,7 @@ export const CLEAR = 1400;
 
 export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip';
 export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor';
-export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1';
+export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1' | 'C2';
 export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss';
 /** Toda nave ou inimigo precisa de um modelo 3D e pontos de tiro com esta chave em models.ts. */
 export type ModelKey = ShipKey | EnemyKey | 'station';
@@ -48,6 +48,12 @@ export interface ModDef {
   color?: string;
   /** minerador: nível (1 = Mk1...). Cada minério exige um nível mínimo (OreDef.level). */
   level?: number;
+  /** chip: o que o val significa. 'multi' = alvos além do principal; 'damage' = % a mais de dano (não acumula). */
+  chip?: 'multi' | 'damage';
+  /** como o efeito aparece no hangar, quando não é o "+val" seguido do rótulo do tipo */
+  effect?: string;
+  /** não está à venda: só se consegue como espólio (o preço serve só para a revenda) */
+  drop?: boolean;
 }
 export interface EnemyDef {
   key: EnemyKey; name: string;
@@ -67,11 +73,11 @@ export interface EnemyDef {
 // Corvette, Mk3 do Cruiser. Ao mexer nos números, confira a espera entre compras (o teste mede a maior delas).
 export const START = {credits: 300, ship: 'scout', mods: ['L1', 'L1', 'S1']} as const; // sobra um slot de arma: a 1ª compra é imediata
 export const SHIPS: Record<ShipKey, ShipDef> = {
-  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 1}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
-  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 1}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
-  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
+  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 2}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
+  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 2}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
+  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 2}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
   // tier 4: a vida do Cruiser, bem mais rápida, com um escudo e um míssil a mais que ele
-  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
+  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 2}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
 };
 export const MODS: Record<ModKey, ModDef> = {
   L1: {name: 'Laser Mk1',  type: 'laser',  val: 25,   cost: 300,  model: 'mp1'},
@@ -98,7 +104,10 @@ export const MODS: Record<ModKey, ModDef> = {
   D3: {name: 'Minerador Mk3', type: 'mining', val: 15, cost: 8000, level: 3},
   // chip de múltiplos alvos: val = quantos alvos além do principal. Ligado na barra de atalhos, os lasers se dividem
   // entre o alvo travado e os inimigos mais próximos ao alcance; desligado, todos focam o alvo travado.
-  C1: {name: 'Chip Multialvo', type: 'chip', val: 2, cost: 4000, model: 'chip1'},
+  C1: {name: 'Chip Multialvo', type: 'chip', val: 2, cost: 4000, model: 'chip1', chip: 'multi'},
+  // chip de dano: +20% no dano de lasers e mísseis. Não se compra: o chefe solta um ao ser destruído (BOSS_DROP).
+  // Equipar dois não soma. Cada nave tem dois slots de chip, para ele conviver com o Multialvo.
+  C2: {name: 'Chip de Dano', type: 'chip', val: 20, cost: 10000, model: 'chip2', chip: 'damage', effect: '+20% de dano (lasers e mísseis)', drop: true},
 };
 /** pasta de cada tipo de módulo dentro de public/models/ */
 export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining', chip: 'chips'};
@@ -123,9 +132,14 @@ export const ENEMIES: EnemyDef[] = [
 // Chefe: um só no mapa dele, rondando um ponto fixo; volta depois de destruído (posição e tempo ficam no mapa, em MAPS).
 // Fica fora de ENEMIES: não nasce por sorteio nem entra na conta de renda do teste de economia. É o objetivo de fim de
 // jogo: enorme, lento e com muita vida. Alcança mais longe que os lasers do jogador (RANGE), então não dá para vencê-lo
-// só mantendo distância. Está calibrado para a última nave, com tudo Mk3, vencê-lo sozinha numa investida só, com uns
-// 20% de folga; a nave anterior, igualmente equipada, não consegue de uma vez (o teste confere as duas contas).
-export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 75000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700};
+// só mantendo distância. Está calibrado para ser uma luta apertada: a última nave, com tudo Mk3, vence sozinha numa
+// investida só, mas com menos de 10% da vida sobrando; a nave anterior, igualmente equipada, não consegue de uma vez
+// (o teste confere as duas contas).
+/** o que o chefe solta ao ser destruído: um cubo laranja no lugar onde ele caiu, com este item dentro */
+export const BOSS_DROP: ModKey = 'C2';
+/** distância para recolher um espólio: é só passar por cima */
+export const PICKUP_R = 60;
+export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700};
 
 // ---------- mineração ----------
 // Asteroides espalhados pelo mapa guardam minério. Clicar num deles, com um minerador equipado e a nave a até

@@ -2,7 +2,7 @@
 // Tudo aqui é canvas 2D, menos as naves: elas são desenhadas em 3D por ships3d.ts e copiadas para cá.
 import { RANGE, STATION_R, PORTAL_R, MISSILE_R, MINE_RANGE, MAPS, MODS, MODEL_DIR, ORES } from '../game/data.ts';
 import type { Shot } from '../game/state.ts';
-import { save, stats, cargoUsed, p, enemies, rocks, shots, texts, parts, events, view, map } from '../game/state.ts';
+import { save, stats, cargoUsed, p, enemies, rocks, drops, shots, texts, parts, events, view, map } from '../game/state.ts';
 import type { Stats } from '../game/state.ts';
 import { clamp } from '../game/util.ts';
 import type { Point } from '../game/util.ts';
@@ -208,6 +208,14 @@ export function draw() {
     bar(e.x - 25, ly + 5, 50, 4, e.hp / e.t.hp, '#4d4');
     ctx.font = nameFont; ctx.fillStyle = e.t.color; ctx.fillText(e.t.name, e.x, ly + 10 + nameGap);
   }
+  // espólio: cubo laranja flutuando, com brilho e o nome do item
+  for (const d of drops) if (onScreen(d)) {
+    const s = 16, by = d.y * TILT - 14 - Math.sin(performance.now() / 350) * 5, top = '#ffc163', left = '#ff8a1e', right = '#c95f0a';
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = '#ff8a1e33'; ctx.beginPath(); ctx.arc(d.x, by, s * 2.4, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+    const face = (pts: number[][], c: string) => { ctx.fillStyle = c; ctx.beginPath(); for (const [x, y] of pts) ctx.lineTo(d.x + x, by + y); ctx.closePath(); ctx.fill(); };
+    face([[0, -s], [s, -s / 2], [0, 0], [-s, -s / 2]], top); face([[-s, -s / 2], [0, 0], [0, s], [-s, s / 2]], left); face([[s, -s / 2], [0, 0], [0, s], [s, s / 2]], right);
+    ctx.font = nameFont; ctx.fillStyle = '#ffc163'; ctx.fillText(MODS[d.item].name, d.x, d.y * TILT + s + nameGap);
+  }
   // asteroides: nome do minério e quanto resta; feixe de mineração, tremido, da nave até o asteroide
   ctx.font = nameFont;
   for (const k of stones) { // quando o minerador equipado não alcança o minério, o nome diz qual é preciso
@@ -284,6 +292,7 @@ export function draw() {
   ctx.fillStyle = 'rgba(10,20,40,.8)'; ctx.fillRect(ox, oy, mw, mh); ctx.strokeStyle = '#357'; ctx.strokeRect(ox, oy, mw, mh);
   if (BASE) { ctx.fillStyle = '#2a6'; ctx.fillRect(ox + BASE.x * mk - 3, oy + BASE.y * mk - 3, 6, 6); }
   for (const k of rocks) if (seen.has(k)) { ctx.fillStyle = ORES[k.ore].color; ctx.fillRect(ox + k.x * mk - 1, oy + k.y * mk - 1, 3, 3); } // asteroides já vistos
+  ctx.fillStyle = '#ff8a1e'; for (const d of drops) ctx.fillRect(ox + d.x * mk - 2, oy + d.y * mk - 2, 5, 5); // espólio
   // porão, acima do minimapa: aparece quando há minerador ou carga
   const used = cargoUsed();
   if (st.mine || used >= 1) { ctx.fillStyle = used >= st.cargo - 1e-9 ? '#fa4' : '#9fc'; ctx.textAlign = 'right'; ctx.font = '12px monospace'; ctx.fillText(`Porão ${Math.floor(used)}/${st.cargo}`, ox + mw, oy - 8); ctx.textAlign = 'left'; ctx.font = '14px monospace'; }

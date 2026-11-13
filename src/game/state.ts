@@ -25,7 +25,9 @@ export interface Stats {
   /** nível do melhor minerador equipado (0 = nenhum): diz quais minérios dá para extrair */
   mineLevel: number;
   /** alvos além do principal que o chip de múltiplos alvos permite (0 = sem chip) */
-  multi: number; slots: Record<ModType, number>; r: number;
+  multi: number;
+  /** multiplicador do dano de lasers e mísseis (1 = normal; 1.2 com o chip de dano). dmg já vem multiplicado. */
+  boost: number; slots: Record<ModType, number>; r: number;
   /** cor da aura do escudo e da chama do motor: a do melhor módulo equipado de cada tipo */
   aura: string; flame: string;
 }
@@ -68,6 +70,8 @@ export interface Enemy extends Body {
   hx: number; hy: number; back: boolean;
   hostile: boolean;
 }
+/** espólio no mapa (cubo): passar por cima recolhe o item para o inventário */
+export interface Drop { x: number; y: number; item: ModKey }
 /** asteroide: parado no mapa, some quando o minério (left) acaba */
 export interface Rock { ore: OreKey; x: number; y: number; a: number; r: number; left: number }
 export interface Shot {
@@ -141,8 +145,11 @@ export const count = (type: ModType) => save.mods.filter(m => MODS[m].type === t
 export function stats(): Stats {
   const s = SHIPS[save.ship], t: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0};
   for (const m of save.mods) t[MODS[m].type] += MODS[m].val;
+  const chips = save.mods.map(m => MODS[m]).filter(m => m.type === 'chip');
+  const multi = chips.filter(m => m.chip === 'multi').reduce((a, m) => a + m.val, 0);
+  const boost = 1 + Math.max(0, ...chips.filter(m => m.chip === 'damage').map(m => m.val)) / 100; // o maior vale; não somam
   const color = (type: ModType) => { const k = best(type); return k && MODS[k].color || '#66ccff'; };
-  return {maxHp: s.hp, maxSh: t.shield, dmg: t.laser, speed: s.speed + t.engine, acc: Math.min(1, ACCURACY + t.aim / 100), mine: t.mining, cargo: s.cargo, mineLevel: Math.max(0, ...save.mods.map(m => MODS[m].level ?? 0)), multi: t.chip, slots: s.slots, r: s.r, aura: color('shield'), flame: color('engine')};
+  return {maxHp: s.hp, maxSh: t.shield, dmg: Math.round(t.laser * boost), speed: s.speed + t.engine, acc: Math.min(1, ACCURACY + t.aim / 100), mine: t.mining, cargo: s.cargo, mineLevel: Math.max(0, ...save.mods.map(m => MODS[m].level ?? 0)), multi, boost, slots: s.slots, r: s.r, aura: color('shield'), flame: color('engine')};
 }
 
 /** a nave está na zona segura de uma base? (só lá se compra, vende e equipa; mapa sem base não tem isso) */
@@ -154,7 +161,7 @@ export const map = (): MapDef => MAPS[world.map];
 const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
                           target: null, firing: false, auto: false, multi: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
-export const rocks: Rock[] = [];
+export const rocks: Rock[] = [], drops: Drop[] = [];
 /** Troca o progresso atual pelo que veio de fora (o da conta, ao entrar) e conserta a nave para ele; false se não serve.
  *  Grava no navegador, mas não avisa onPersist: o servidor acabou de mandar esse mesmo progresso. */
 export function adopt(raw: unknown) {

@@ -1,8 +1,8 @@
 // Simulação: as regras do jogo. Só altera o estado; não sabe nada de canvas, tela nem teclado.
-import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, PORTAL_R, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
+import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, PORTAL_R, PICKUP_R, BOSS_DROP, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
 import type { EnemyDef, MapDef, MapKey } from './data.ts';
 import type { ModelKey, ModKey } from './data.ts';
-import { save, persist, stats, cargoUsed, p, enemies, rocks, shots, texts, parts, events, world, map } from './state.ts';
+import { save, persist, stats, cargoUsed, p, enemies, rocks, drops, shots, texts, parts, events, world, map } from './state.ts';
 import type { Body, Enemy, Player, Rock } from './state.ts';
 import { clamp, dist, rnd, rand } from './util.ts';
 import type { Point } from './util.ts';
@@ -19,7 +19,7 @@ export const keepOut = () => { const b = map().base; return b ? b.r + KEEP_MARGI
 /** Troca de mapa: a nave aparece em (x, y) de to. O mapa que ficou para trás é descartado (ao voltar, é repovoado). */
 export function travel(to: MapKey, x: number, y: number) {
   world.map = to; seeded = false;
-  enemies.length = rocks.length = shots.length = parts.length = texts.length = 0;
+  enemies.length = rocks.length = drops.length = shots.length = parts.length = texts.length = 0; // espólio deixado para trás se perde
   Object.assign(p, {x, y, tx: x, ty: y, target: null, mining: null, beam: false});
 }
 
@@ -192,12 +192,18 @@ export function update(dt: number) {
       const tgts = [t, ...p.extra];
       for (const e of tgts) e.hostile = true;
       save.mods.filter(m => MODS[m].type === 'laser').forEach((m, i, l) =>
-        shoot(p, st.r, save.ship, i, tgts[i % tgts.length], Math.round(MODS[m].val * rnd(.85, 1.15)), '#4cf', i / l.length, m, rand() >= st.acc));
+        shoot(p, st.r, save.ship, i, tgts[i % tgts.length], Math.round(MODS[m].val * st.boost * rnd(.85, 1.15)), '#4cf', i / l.length, m, rand() >= st.acc));
     }
   }
 
   // a chama sai dos bocais na posição final da nave (depois de ela virar para o alvo) e tem a cor do motor equipado
   if (moved) thrust(p, st.r, save.ship, st.flame);
+
+  // espólio: passar por cima recolhe para o inventário
+  for (let i = drops.length; i--;) if (dist(p, drops[i]) < PICKUP_R) {
+    const [d] = drops.splice(i, 1);
+    save.inv.push(d.item); persist(); float(p, MODS[d.item].name + ' recolhido', '#fa4', 3);
+  }
 
   // ---------- mineração ----------
   // O feixe liga sozinho quando o asteroide escolhido (clique) está ao alcance, há minerador e sobra espaço no porão.
@@ -238,7 +244,7 @@ export function update(dt: number) {
       c.n--; c.t = MISSILE_CD; p.mleft = !left; t.hostile = true; p.lastShot = now;
       // ponto de fixação 1 = lado esquerdo da nave, 0 = direito (os pares de HARD são espelhados); a faixa de voo
       // acompanha o lado, para dois mísseis seguidos irem lado a lado e não em fila
-      shoot(p, st.r, save.ship, left ? 1 : 0, t, MODS[m].val, '#fa4', 0, m, rand() >= st.acc, true, (left ? -1 : 1) * LANE / 2);
+      shoot(p, st.r, save.ship, left ? 1 : 0, t, Math.round(MODS[m].val * st.boost), '#fa4', 0, m, rand() >= st.acc, true, (left ? -1 : 1) * LANE / 2);
     }
   }
 
@@ -308,7 +314,7 @@ export function update(dt: number) {
     parts.push({x: tg.x + rnd(-8, 8), y: tg.y + rnd(-8, 8), vx: 0, vy: 0, t: .15, life: .15, r: 7, c: q.c}); // faísca do impacto
     if (hit(tg, q.dmg) && 't' in tg) { // inimigo destruído (a morte do jogador é tratada logo abaixo)
       enemies.splice(enemies.indexOf(tg), 1); if (p.target === tg) p.target = null; explode(tg, tg.t.r);
-      if (boss && tg.t === boss.def) bossAt[world.map] = now + boss.respawn;
+      if (boss && tg.t === boss.def) { bossAt[world.map] = now + boss.respawn; drops.push({x: tg.x, y: tg.y, item: BOSS_DROP}); } // o chefe deixa o espólio dele
       save.credits += tg.t.reward; persist();
       float(tg, '+' + tg.t.reward + ' cr', '#fd4', 1.5);
     }

@@ -4,7 +4,7 @@
 // meio e o inventário (itens guardados) à direita. Naves: escolher e comprar naves. Loja: comprar módulos, por categoria.
 // As regras de compra, venda e equipar ficam em state.ts; aqui é só a tela.
 import { SHIPS, MODS, ORES, ORE_STACK, LABEL, SLOT, SLOT_ONE, MODEL_DIR, ACCURACY } from '../game/data.ts';
-import type { ModKey, ModType, OreKey, ShipDef, ShipKey } from '../game/data.ts';
+import type { ModDef, ModKey, ModType, OreKey, ShipDef, ShipKey } from '../game/data.ts';
 import { save, stats, count, freeSlot, buyMod, sellMod, equip, unequip, buyShip, useShip, cargoUsed, cargoValue, sellOre, sellCargo, atBase } from '../game/state.ts';
 import { keys } from '../game/util.ts';
 import { TILT } from '../view/camera.ts';
@@ -63,6 +63,8 @@ const TYPE_NAME: Record<ModType, string> = {laser: 'Arma', shield: 'Gerador de e
 // motivo para desligar tudo que mexe no equipamento ou nos créditos: vazio na base, preenchido fora dela.
 // É só o aviso na tela: quem barra de verdade são as regras em state.ts.
 const away = () => atBase() ? '' : 'Só na zona segura da base';
+// o efeito de um item, como aparece nas fichas: "+25 de dano", ou o texto próprio do item
+const effect = (m: ModDef) => m.effect ?? `+${m.val}${LABEL[m.type]}`;
 // atributo disabled com o motivo no tooltip; why vazio = liberado
 const off = (why: string) => why ? `disabled title="${why}"` : '';
 
@@ -85,7 +87,7 @@ function shipPane(k: ShipKey) {
 // ---------- aba Equipamento ----------
 // casa com um item: quadrado com o ícone, borda na cor do tipo; todas do mesmo tamanho, ocupadas ou vazias
 const cell = (from: From, i: number, k: ModKey) => { const m = MODS[k]; return `<button class="cell t-${m.type}${sel?.from === from && sel.i === i ? ' on' : ''}"
-  data-from="${from}" data-i="${i}" title="${m.name} · +${m.val}${LABEL[m.type]}">${pic(k)}</button>`; };
+  data-from="${from}" data-i="${i}" title="${m.name} · ${effect(m)}">${pic(k)}</button>`; };
 const empties = (n: number) => '<span class="cell empty"></span>'.repeat(Math.max(0, n));
 // Grupos recolhíveis (nave e inventário): clicar no título esconde ou mostra as casas. Não é salvo: ao recarregar a
 // página, tudo volta aberto. id = 'mods-<tipo>' ou 'inv-<tipo>'; lock = título sem o que recolher (grupo vazio).
@@ -131,7 +133,7 @@ function detail() {
   const move = sel.from === 'inv' ? `<button class="buy" data-do="equip" ${off(away() || (freeSlot(m.type) ? '' : `Sem slot livre de ${SLOT[m.type]}`))}>Equipar</button>`
                                   : `<button class="buy" data-do="unequip" ${off(away())}>Desequipar</button>`;
   return `<div class="det t-${m.type}"><span class="ic">${pic(k)}</span>
-    <div><b>${m.name}</b><small>+${m.val}${LABEL[m.type]}</small><small class="pr">${svg(I.coin)}${cr(m.cost)}</small></div>
+    <div><b>${m.name}</b><small>${effect(m)}</small><small class="pr">${svg(I.coin)}${cr(m.cost)}</small></div>
     <div class="btns">${move}<button class="sell" data-do="sell" ${off(away())}>Vender · ${cr(m.cost / 2)}</button></div></div>`;
 }
 // inventário: itens comprados e guardados, separados pelas mesmas categorias da loja. Todas aparecem, na mesma ordem,
@@ -164,7 +166,7 @@ function shipsTab() {
 // ---------- aba Loja ----------
 // categorias à esquerda, itens da categoria no meio e, à direita, o item escolhido em destaque com dados e compra
 function storeTab() {
-  const list = keys(MODS).filter(k => MODS[k].type === cat);
+  const list = keys(MODS).filter(k => MODS[k].type === cat && !MODS[k].drop); // itens de espólio não estão à venda
   if (!list.includes(pick)) pick = list[0];
   const m = MODS[pick], st = stats();
   const cats = keys(SLOT).map(t => `<button class="t-${t}${t === cat ? ' on' : ''}" data-cat="${t}">${svg(ICON[t])}${SLOT[t]}</button>`).join('');
@@ -172,7 +174,7 @@ function storeTab() {
     <b>${MODS[k].name}</b><span class="im">${pic(k)}</span><span class="pr">${cr(MODS[k].cost)}</span></button>`).join('');
   return `<div class="store"><div class="cats">${cats}</div><div class="tiles">${tiles}</div>
     <div class="show t-${m.type}"><h3>${m.name}</h3><small>${TYPE_NAME[m.type]}</small><div class="big">${pic(pick)}</div>
-      <dl><dt>Efeito</dt><dd>+${m.val}${LABEL[m.type]}</dd>
+      <dl><dt>Efeito</dt><dd>${effect(m)}</dd>
         <dt>Valor de revenda</dt><dd>${cr(m.cost / 2)}</dd>
         <dt>Equipados na nave</dt><dd>${save.mods.filter(x => x === pick).length}</dd>
         <dt>No inventário</dt><dd>${save.inv.filter(x => x === pick).length}</dd>
