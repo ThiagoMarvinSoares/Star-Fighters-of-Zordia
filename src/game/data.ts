@@ -122,9 +122,10 @@ export const ENEMIES: EnemyDef[] = [
 ];
 // Chefe: um só no mapa dele, rondando um ponto fixo; volta depois de destruído (posição e tempo ficam no mapa, em MAPS).
 // Fica fora de ENEMIES: não nasce por sorteio nem entra na conta de renda do teste de economia. É o objetivo de fim de
-// jogo: enorme, lento e com muita vida. Alcança mais longe que os lasers do jogador (RANGE), então não dá para
-// vencê-lo só mantendo distância; um Cruiser completo precisa de várias investidas, recuando para recuperar o escudo.
-export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 200000, sh: 30000, dmg: 500, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700};
+// jogo: enorme, lento e com muita vida. Alcança mais longe que os lasers do jogador (RANGE), então não dá para vencê-lo
+// só mantendo distância. Está calibrado para a última nave, com tudo Mk3, vencê-lo sozinha numa investida só, com uns
+// 20% de folga; a nave anterior, igualmente equipada, não consegue de uma vez (o teste confere as duas contas).
+export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 75000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700};
 
 // ---------- mineração ----------
 // Asteroides espalhados pelo mapa guardam minério. Clicar num deles, com um minerador equipado e a nave a até

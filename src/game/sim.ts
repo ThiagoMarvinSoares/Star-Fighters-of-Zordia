@@ -78,12 +78,15 @@ export function explode(o: Point, r: number) {
 
 const born = (t: EnemyDef, x: number, y: number): Enemy => ({t, x, y, wx: x, wy: y, hx: x, hy: y, back: false, a: 0, hp: t.hp, sh: t.sh, cd: 0, lastHit: -99, hostile: false});
 // Sorteia com pick() um ponto que passe em ok() e fique a pelo menos far do jogador. Em mapa pequeno pode não existir
-// ponto tão longe: depois de 40 sorteios fica o candidato válido mais distante, em vez de sortear para sempre.
+// ponto tão longe: depois de 40 candidatos válidos fica o mais distante deles, em vez de sortear para sempre. (Contam os
+// válidos, não os sorteios: numa faixa em que a maior parte dos pontos cai fora do mapa, 40 sorteios eram poucos e às
+// vezes um inimigo renascia perto do jogador mesmo havendo lugar longe.)
 function place(pick: () => Point, ok: (q: Point) => boolean, far: number): Point {
   let best: Point | undefined, bd = -1;
-  for (let i = 0; i < 400 && !(i >= 40 && best); i++) {
+  for (let i = 0, valid = 0; i < 400 && valid < 40; i++) {
     const q = pick();
     if (!ok(q)) continue;
+    valid++;
     const d = dist(q, p);
     if (d >= far) return q;
     if (d > bd) { best = q; bd = d; }
@@ -161,7 +164,8 @@ export function update(dt: number) {
   const calm = (e: Enemy) => { if (e.hostile) { e.hostile = false; if (!boss || e.t !== boss.def) { e.hp = e.t.hp; e.sh = e.t.sh; } } };
   if (safe) enemies.forEach(calm); // o jogador ficou a salvo: quem o perseguia desiste
   if (now - p.lastHit > 5) p.sh = Math.min(st.maxSh, p.sh + st.maxSh * .08 * dt);
-  if (safe || now - p.lastHit > 10) p.hp = Math.min(st.maxHp, p.hp + st.maxHp * (safe ? .2 : .03) * dt);
+  // a vida só se recupera a salvo na base; fora dela, só o escudo volta (acima)
+  if (safe) p.hp = Math.min(st.maxHp, p.hp + st.maxHp * .2 * dt);
 
   // ---------- armas do jogador ----------
   p.cd -= dt;

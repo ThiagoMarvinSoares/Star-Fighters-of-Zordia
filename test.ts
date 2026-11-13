@@ -393,6 +393,12 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert(p.fight === 0 && !e.hostile && e.hp === e.t.hp && e.sh === e.t.sh, 'fim do combate: inimigo inteiro de novo');
   const hurt = p.hp = stats().maxHp / 2; frames(30);
   assert(p.hp > hurt * 1.15, 'a salvo, a cura rápida liga');
+  // fora da base a vida não volta, por mais que o jogador espere; o escudo volta
+  p.x = p.tx = BASE.x + 1200; p.y = p.ty = BASE.y + 1200; p.hp = hurt; p.sh = 0; // fora da base, na faixa dos Drones, que não atacam sozinhos
+  for (let i = 0; i < 600; i++) { for (const o of enemies) o.hostile = false; update(.05); if (p.hp < hurt) p.hp = hurt; } // 30 s; se alguém acertar, repõe
+  assert.equal(p.hp, hurt, 'fora da base a vida não se recupera');
+  assert(p.sh > 0 || stats().maxSh === 0, 'o escudo se recupera em qualquer lugar');
+  p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp;
   // o chefe não se recupera ao desistir: a luta contra ele é em várias investidas
   const b = enemies.find(o => o.t === BOSS)!; b.hp = 1000; b.hostile = true; frames(1);
   assert(!b.hostile && b.hp === 1000);
@@ -411,6 +417,21 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   put(e, BASE.x - 720, BASE.y); e.hostile = false; p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; frames(50);
   assert(e.x === BASE.x - 720 && e.y === BASE.y);
   p.hp = stats().maxHp; shots.length = 0;
+}
+
+// chefe, no papel: a última nave com tudo Mk3 vence sozinha numa investida, com folga; a penúltima, igualmente equipada,
+// não consegue de uma vez. Mexeu na vida ou no dano do chefe, nas naves ou nos itens Mk3? Esta conta diz se ainda vale.
+{
+  const duel = (ship: ShipKey) => { // quantas vezes o tempo que a nave aguenta cobre o tempo que ela leva para matar
+    const s = SHIPS[ship].slots, acc = Math.min(1, ACCURACY + MODS.A3.val / 100);
+    const dps = (s.laser * MODS.L3.val + s.missile * MODS.M3.val / MISSILE_CD) * acc; // lasers + um míssil por recarga
+    const burst = s.missile * MISSILE_CHARGES * MODS.M3.val * acc;                    // as cargas que já começam prontas
+    const kill = (BOSS.hp + BOSS.sh - burst) / dps, last = (SHIPS[ship].hp + s.shield * MODS.S3.val) / (BOSS.dmg / 1.3); // 1,3 s = ciclo de tiro dos inimigos
+    return last / kill;
+  };
+  const ships = keys(SHIPS), top = ships[ships.length - 1], second = ships[ships.length - 2];
+  assert(duel(top) > 1.15 && duel(top) < 1.6, `${top} contra o chefe: aguenta ${duel(top).toFixed(2)}x o tempo de matar`);
+  assert(duel(second) < 1, `${second} não deveria vencer de uma vez: ${duel(second).toFixed(2)}x`);
 }
 
 // chefe: um só, rondando o ponto dele; destruído, paga a recompensa e só volta depois de BOSS_RESPAWN segundos
