@@ -1,7 +1,6 @@
 // Áudio: toca o que a simulação registrou no quadro (events), com os arquivos de public/sfx/ (pacote
 // "Sci-Fi Sounds" da Kenney, domínio público). Enquanto um arquivo não carregou (ou se o navegador não toca .ogg),
 // cai num som sintetizado equivalente.
-import { MODS } from '../game/data.ts';
 import type { ModKey } from '../game/data.ts';
 import { events, p } from '../game/state.ts';
 import { clamp, rnd } from '../game/util.ts';
@@ -10,13 +9,11 @@ const HEAR = 1000; // distância até onde se ouve um evento; o volume cai até 
 const MAX_PER_FRAME = 8;
 
 // grupos de sons: nome -> quantas variações existem (arquivos <nome>_000.ogg, _001.ogg, ...)
-const BANK = {laserLarge: 5, laserRetro: 5, forceField: 5, impactMetal: 5,
+const BANK = {laserSmall: 5, laserLarge: 5, forceField: 5, impactMetal: 5,
               explosionCrunch: 5, lowFrequency_explosion: 2};
 type Sfx = keyof typeof BANK;
 // som de cada laser do jogador: [grupo, velocidade]. Velocidade menor = mais grave e pesado.
-// Os lasers usam o "laserRetro" do pacote, o zap de fliperama, tocado bem abaixo da velocidade original para ficar
-// encorpado (na velocidade normal soava fino demais): mais leve no Mk1, mais pesado no Mk3.
-const SHOT: Record<string, [Sfx, number]> = {L1: ['laserRetro', .74], L2: ['laserRetro', .63], L3: ['laserRetro', .53],
+const SHOT: Record<string, [Sfx, number]> = {L1: ['laserSmall', .9], L2: ['laserLarge', 1.15], L3: ['laserLarge', .8],
   M1: ['laserLarge', .4], M2: ['laserLarge', .4], M3: ['laserLarge', .35], M4: ['laserLarge', .3]}; // míssil: o mesmo som, bem grave, até haver um próprio
 const ENEMY_SHOT: [Sfx, number] = ['laserLarge', .65]; // o mesmo laser pesado, bem mais grave
 
@@ -108,14 +105,7 @@ export function playEvents() {
     const pan = clamp(dx / 700, -1, 1), k = rnd(.94, 1.06); // k varia o tom para sons seguidos não soarem idênticos
     if (e.kind === 'shot') {
       const [name, rate] = e.mine ? SHOT[e.mod as ModKey] ?? SHOT.L1 : ENEMY_SHOT;
-      if (sample(ac, name, (e.mine ? .5 : .32) * near, pan, rate * k)) {
-        const laser = e.mine && !!e.mod && MODS[e.mod].type === 'laser';
-        // laser do jogador, em camadas para dar corpo: o zap, o laser pesado do pacote por baixo e um "piu" sintetizado
-        // que desce dos médios para o grave (sem agudos, que deixavam o som fino). Todo tiro leva ainda um grave curto.
-        if (laser) {
-          sample(ac, 'laserLarge', .24 * near, pan, rate * 1.3 * k);
-          tone(ac, 'sawtooth', 620 * rate * k, 110 * rate * k, .16, .09 * near, pan);
-        }
+      if (sample(ac, name, (e.mine ? .5 : .32) * near, pan, rate * k)) { // + um grave curto por baixo, para o tiro ter peso
         tone(ac, 'sine', 170 * k, 50, .13, (e.mine ? .3 : .26) * near, pan);
         continue;
       }
