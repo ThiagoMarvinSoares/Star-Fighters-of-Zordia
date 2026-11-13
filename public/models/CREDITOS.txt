@@ -1,0 +1,86 @@
+Créditos dos modelos 3D de terceiros usados no jogo
+
+bases/base_anel.glb
+  "Toroidal Ring Ship - Battle Worn Sci-Fi Vessel", de skelee_kor (https://sketchfab.com/Unreal_Joelab)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/toroidal-ring-ship-battle-worn-sci-fi-vessel-d29bf2901bb548fbadbaef98b1421326
+  Alterações: removidos os dados que o jogo não usa (tangentes, mapas de normal e de metal/rugosidade e conjuntos de UV extras).
+
+ships/scout.glb
+  "LIGHT FIGHTER SPACESHIP - FREE -", de Kerem Kavalci (https://sketchfab.com/Keremz)
+  Licença: Sketchfab Standard (https://sketchfab.com/licenses) — pode ser usado dentro de um projeto, mas o arquivo
+  do modelo em si não pode ser redistribuído nem revendido.
+  Fonte: https://sketchfab.com/3d-models/light-fighter-spaceship-free-51616ef53af84fe595c5603cd3e0f3e1
+  Alterações: removidos os dados que o jogo não usa (tangentes, mapas de normal, metal/rugosidade e oclusão, UV extra).
+
+ships/corvette.glb
+  "Star Sparrow Modular Spaceship", de Ebal Studios (https://sketchfab.com/EbalStudios)
+  Licença: Sketchfab Standard (https://sketchfab.com/licenses) — pode ser usado dentro de um projeto, mas o arquivo
+  do modelo em si não pode ser redistribuído nem revendido.
+  Fonte: https://sketchfab.com/3d-models/star-sparrow-modular-spaceship-28806b168f8043bbb5c1c922f98452c9
+  Alterações: o arquivo original é um kit de peças soltas; a nave foi montada com as peças e posições do último quadro
+  da animação do kit (tools/montar-star-sparrow.py), as armas do kit viraram marcadores de canhão e os dados que o
+  jogo não usa foram removidos (tools/slim-glb.py).
+
+ships/dreadnought.glb
+  "Space Ship Dreadnought", de WeSVa (https://sketchfab.com/WSVideoCarta)
+  Licença: Sketchfab Standard (https://sketchfab.com/licenses) — pode ser usado dentro de um projeto, mas o arquivo
+  do modelo em si não pode ser redistribuído nem revendido.
+  Fonte: https://sketchfab.com/3d-models/space-ship-dreadnought-b75756665b25401c89aceae6099571f7
+  Alterações: malha reduzida de 699 mil para 43 mil triângulos e dados que o jogo não usa removidos
+  (tools/slim-glb.py --grid 64).
+
+ships/boss.glb
+  "Spaceship Organic", de Tink (https://sketchfab.com/tinkov)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/spaceship-organic-685c3f04cc8d485495020a014063843a
+  Alterações: removidos os dados que o jogo não usa (tangentes, mapas de normal, metal/rugosidade e oclusão, UV extra)
+  (tools/slim-glb.py).
+
+missiles/missil1.glb a missil4.glb
+  "Missiles", de Civorsky (https://sketchfab.com/civorsky)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/missiles-37899978144a45d0bd03c3538957b145
+  Alterações: o arquivo original traz seis mísseis juntos; cada um foi separado em um arquivo próprio (quatro deles
+  são usados) e os dados que o jogo não usa foram removidos (tools/slim-glb.py).
+
+ships/interceptor.glb
+  "Soviet Jet MiG-60 [Fictional Aircraft]", de Savy (https://sketchfab.com/SavyTheCreator)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/soviet-jet-mig-60-fictional-aircraft-5d47d8bf64734c65951614f597d28dcf
+  Alterações: removidos os dados que o jogo não usa (tangentes, mapas de normal, metal/rugosidade e oclusão, UV extra)
+  (tools/slim-glb.py).
+
+ships/cruiser.glb
+  "Leosteus Class Guardian", de Lord Daro (https://sketchfab.com/tomspecht)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/leosteus-class-guardian-f45bb6d735c74776950279c80cb59145
+  Alterações: materiais convertidos para o formato padrão e dados que o jogo não usa removidos (tools/slim-glb.py).
+
+ships/raider.glb
+  "E_Ship_A", de LaVADraGoN (https://sketchfab.com/lavadragon)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/e-ship-a-5de635232b9a4661b75048576cb20f53
+  Alterações: modelo virado de frente para trás e dados que o jogo não usa removidos (tools/slim-glb.py --flip).
+
+ships/drone.glb
+  "Organic alien spaceship", de ricksticky (https://sketchfab.com/ricksticky)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/organic-alien-spaceship-af5018eeddab45919a11b9df3e86754c
+  Alterações: material passado a opaco e dados que o jogo não usa removidos (tools/slim-glb.py --opaque).
+
+asteroids/asteroide2.glb a asteroide4.glb
+  "Stylized Asteroids", de Dimitri Matcharashvili (https://sketchfab.com/ditomatch)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/stylized-asteroids-2234bba2e335434f90f85b3162a229db
+  Alterações: o arquivo original traz quatro asteroides juntos; três deles (roxo, ciano e azul) foram separados em
+  arquivos próprios e os dados que o jogo não usa foram removidos (tools/slim-glb.py).
+
+Nota geral: os arquivos de naves, bases e mísseis também tiveram a geometria comprimida (tools/compress-glb.mjs), sem
+mudar a forma; no boss.glb as peças de mesmo material foram unidas numa malha só. As naves do jogador (scout, corvette,
+cruiser, interceptor) mantêm as texturas de relevo e metal do original; os demais modelos ficam só com cor e brilho.
+
+Efeitos (public/fx/*.png)
+  "Particle Pack", de Kenney (https://www.kenney.nl)
+  Licença: Creative Commons Zero, CC0 (uso livre, crédito não exigido)
+  Fonte: https://www.kenney.nl/assets/particle-pack
