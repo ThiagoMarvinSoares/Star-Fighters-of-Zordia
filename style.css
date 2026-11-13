@@ -200,7 +200,7 @@ canvas{display:block;cursor:crosshair}
 #map-title::after{content:'';display:block;width:220px;height:1px;margin:14px auto 0;background:linear-gradient(90deg,transparent,#3cdcff,transparent)}
 @keyframes map-title{0%{opacity:0;letter-spacing:.9em}20%{opacity:1;letter-spacing:.5em}75%{opacity:1}100%{opacity:0}}
 
-/* ---------- HUD: painéis compactos de cantos chanfrados. .hudp = jogador (canto inferior esquerdo); #target = alvo (topo, centro) ---------- */
+/* ---------- HUD: painéis compactos de cantos chanfrados. #hud = jogador (canto superior esquerdo); #target = alvo (topo, centro) ---------- */
 /* a borda chanfrada é feita com duas camadas recortadas: a de fora na cor da borda, a de dentro (::before) escura */
 .hudp{--cut:polygon(10px 0,calc(100% - 10px) 0,100% 10px,100% calc(100% - 10px),calc(100% - 10px) 100%,10px 100%,0 calc(100% - 10px),0 10px);
   position:fixed;width:330px;pointer-events:none;font:12px/1.25 system-ui,'Segoe UI',sans-serif;color:#cfe6f5;filter:drop-shadow(0 0 6px var(--glow))}
@@ -226,6 +226,6 @@ canvas{display:block;cursor:crosshair}
   background:linear-gradient(var(--a),var(--b));box-shadow:0 0 6px var(--b);transition:width .15s linear}
 .hudp .tr span{position:absolute;right:8px;top:0;line-height:16px;font-size:11px;font-weight:700;color:var(--a);text-shadow:0 0 3px #000,0 0 3px #000}
 .hudp .tr span b{color:#fff}
-#hud{left:12px;bottom:12px;transform:scale(var(--ui,1));transform-origin:bottom left;--edge:#3cdcff;--glow:#3cdcff59}
+#hud{left:12px;top:12px;transform:scale(var(--ui,1));transform-origin:top left;--edge:#3cdcff;--glow:#3cdcff59}
 #target{left:50%;top:12px;transform:translateX(-50%) scale(var(--ui,1));transform-origin:top center;--edge:#ff6a5a;--glow:#ff6a5a59}
 #target .pt{background:#ff6a5a99}

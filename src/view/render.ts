@@ -272,7 +272,7 @@ export function draw() {
   ctx.save(); ctx.scale(u, u);
   ctx.textAlign = 'left'; ctx.fillStyle = '#789'; ctx.font = '12px monospace';
   ['Clique: mover / travar alvo / minerar', 'Roda do mouse: zoom   + e -: tamanho da interface', '1 ou ESPAÇO: canhões   2: mísseis   T: mira automática', 'B: inventário   F: fps']
-    .forEach((line, i) => ctx.fillText(line, 12, 18 + i * 16)); // em linhas curtas: uma linha só passava por baixo do painel do alvo
+    .forEach((line, i, all) => ctx.fillText(line, 12, ch / u - 12 - (all.length - 1 - i) * 16)); // canto inferior esquerdo, em linhas curtas
   ctx.restore();
   ctx.font = '14px monospace';
   // minimapa: a origem vai para o canto dele e a escala para u; daqui em diante ox, oy, mw, mh e mk são da tela 1x

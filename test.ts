@@ -293,6 +293,22 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   p.tx = p.x; p.ty = p.y;
 }
 
+// o bico da nave aponta para o alvo enquanto ela o ataca, mesmo voando para outro lado; sem atacar, aponta para onde vai
+{
+  reset();
+  const e = nearest('drone'), aim = () => Math.atan2(e.y - p.y, e.x - p.x), near = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 1e-9;
+  p.x = e.x - 200; p.y = e.y + 150; p.tx = p.x; p.ty = p.y + 5000; p.target = e; e.hp = 1e9; // alvo para cima e à direita; a nave voa para baixo
+  frames(1);
+  assert(near(p.a, Math.PI / 2) && !near(p.a, aim()), 'lasers desligados: aponta para onde voa');
+  p.firing = true; frames(3);
+  assert(near(p.a, aim()), 'atacando: aponta para o alvo');
+  const flames = parts.filter(q => q.a !== undefined && q.c === stats().flame).slice(-ENGINES[save.ship].length); // as do jogador, pela cor do motor
+  assert(flames.length && flames.every(q => near(q.a!, p.a)), 'a chama acompanha para onde a nave está virada');
+  p.firing = false; frames(1);
+  assert(near(p.a, Math.PI / 2), 'parou de atacar: volta a apontar para onde voa');
+  e.hp = e.t.hp; p.tx = p.x; p.ty = p.y;
+}
+
 // mira automática: sem alvo e com lasers desligados, só atira depois de ligada
 {
   reset();

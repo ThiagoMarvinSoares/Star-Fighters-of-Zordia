@@ -143,7 +143,7 @@ export function update(dt: number) {
   events.length = 0; // eventos valem por um quadro
   now += dt;
   const st = stats();
-  if (step(p, p.tx, p.ty, st.speed * dt)) thrust(p, st.r, save.ship, st.flame); // a chama tem a cor do motor equipado
+  const moved = step(p, p.tx, p.ty, st.speed * dt); // vira a nave para onde ela vai; se estiver atacando, a mira corrige abaixo
   const m = map(), base = m.base, boss = m.boss;
   p.x = clamp(p.x, 0, m.w); p.y = clamp(p.y, 0, m.h);
   // portal: encostou, mudou de mapa; o resto do quadro não vale mais (o mapa novo é povoado no próximo)
@@ -174,13 +174,18 @@ export function update(dt: number) {
   if (t) {
     const td = dist(p, t);
     if (td > 1500) p.target = null;
-    else if (!inBase && (p.firing || p.auto) && td <= RANGE && p.cd <= 0 && st.dmg) {
+    // atacando (lasers liberados e alvo ao alcance): o bico da nave aponta para o alvo, mesmo voando para outro lado
+    else if (!inBase && (p.firing || p.auto) && td <= RANGE && st.dmg) p.a = Math.atan2(t.y - p.y, t.x - p.x);
+    if (p.target && !inBase && (p.firing || p.auto) && td <= RANGE && p.cd <= 0 && st.dmg) {
       p.cd = 1; t.hostile = true; p.lastShot = now;
       // um tiro por módulo de laser, cada um saindo do seu ponto de fixação e com o dano do seu módulo
       save.mods.filter(m => MODS[m].type === 'laser').forEach((m, i, l) =>
         shoot(p, st.r, save.ship, i, t, Math.round(MODS[m].val * rnd(.85, 1.15)), '#4cf', i / l.length, m, rand() >= st.acc));
     }
   }
+
+  // a chama sai dos bocais na posição final da nave (depois de ela virar para o alvo) e tem a cor do motor equipado
+  if (moved) thrust(p, st.r, save.ship, st.flame);
 
   // ---------- mineração ----------
   // O feixe liga sozinho quando o asteroide escolhido (clique) está ao alcance, há minerador e sobra espaço no porão.

@@ -1,4 +1,4 @@
-// HUD: dois painéis iguais em HTML por cima do canvas. O do jogador (canto inferior esquerdo) mostra a nave em uso,
+// HUD: dois painéis iguais em HTML por cima do canvas. O do jogador (canto superior esquerdo) mostra a nave em uso,
 // créditos, estado dos lasers, vida e escudo; o do alvo (topo, ao centro) aparece quando há um inimigo travado e
 // mostra o mesmo dele, com a recompensa. syncHud() roda a cada quadro e só mexe na página quando um valor muda.
 import { SHIPS, RANGE } from '../game/data.ts';
