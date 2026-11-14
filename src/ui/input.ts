@@ -8,6 +8,7 @@ import { float } from '../game/sim.ts';
 import { SCALE } from '../game/models.ts';
 import { toggleShop, shopOpen, renderShop } from './hangar.ts';
 import { useSlot } from './hotbar.ts';
+import { startTalk } from './missions.ts';
 
 document.getElementById('c')!.addEventListener('mousedown', ev => {
   if (ev.button !== 0) return; // só o botão esquerdo: o menu de contexto engole o mouseup
@@ -27,7 +28,7 @@ document.getElementById('c')!.addEventListener('mousedown', ev => {
   }
   // clique na estação com a nave dentro da zona segura: abre o hangar (de fora, o clique só manda voar até lá;
   // para consultar o inventário longe da base há a tecla B e o botão ao lado da barra de atalhos)
-  if (atBase() && dist(w, map().base!) < STATION_R * SCALE) { toggleShop(true); return; }
+  if (atBase() && dist(w, map().base!) < STATION_R * SCALE) { if (!startTalk()) toggleShop(true); return; } // o Comandante fala antes, se tiver o que dizer
   mouse.held = true;
 });
 addEventListener('mousemove', ev => { mouse.x = ev.clientX; mouse.y = ev.clientY; });

@@ -9,6 +9,7 @@ import type { Point } from '../game/util.ts';
 import { TILT, COSV, onScreen, minimap, ui } from './camera.ts';
 import { SCALE } from '../game/models.ts';
 import { createStage, hasModel } from './ships3d.ts';
+import { needsTalk } from '../game/missions.ts';
 
 // ---------- efeitos com imagens: public/fx/<nome>.png, do Particle Pack do Kenney ----------
 // As imagens são brancas com transparência; cada uma é tingida uma vez por cor usada e guardada. Desenhe com a mistura
@@ -52,10 +53,11 @@ const bgOf = (file: string) => { let i = bgs.get(file); if (!i) { i = new Image(
 /** Carrega de antemão as imagens do desenho (fundo do mapa e efeitos), para nada aparecer aos poucos; tick a cada uma. */
 export function preloadImages(bg: string, tick?: () => void) {
   const wait = (i: HTMLImageElement) => new Promise<void>(ok => { if (i.complete) ok(); else i.onload = i.onerror = () => ok(); }).then(tick);
-  return Promise.all([wait(bgOf(bg)), ...FX.map(name => { fx(name, '#ffffff'); return wait(fxImg.get(name)!); })]);
+  const faces = ['huedro', 'fabricio'].map(n => { const i = new Image(); i.src = `characters/${n}.jpg`; return i; }); // retratos das conversas
+  return Promise.all([wait(bgOf(bg)), ...faces.map(wait), ...FX.map(name => { fx(name, '#ffffff'); return wait(fxImg.get(name)!); })]);
 }
 /** quantas imagens preloadImages carrega */
-export const IMAGES = 1 + FX.length;
+export const IMAGES = 3 + FX.length;
 const PARALLAX = .08;
 const stars = Array.from({length: 250}, () => ({x: Math.random(), y: Math.random(), d: .1 + Math.random() * .5}));
 
@@ -168,6 +170,11 @@ export function draw() {
   if (BASE) {
     const fight = p.fight > 0; // em combate a zona não protege: a borda fica laranja e avisa
     ctx.strokeStyle = fight ? '#d73' : '#2a6'; ctx.setLineDash([8, 8]); ring(BASE, BASE.r); ctx.stroke(); ctx.setLineDash([]);
+    if (needsTalk()) { // o Comandante quer falar: um "!" pulando sobre a estação
+      const bob = Math.sin(performance.now() / 250) * 6, y = BASE.y * TILT - STATION_R * SCALE * .9 + bob;
+      ctx.fillStyle = '#ffd45a'; ctx.beginPath(); ctx.arc(BASE.x, y, 16, 0, 7); ctx.fill();
+      ctx.fillStyle = '#1a1200'; ctx.font = 'bold 22px system-ui, sans-serif'; ctx.fillText('!', BASE.x, y + 8); ctx.font = '14px monospace';
+    }
     ctx.fillStyle = fight ? '#fb8' : '#9fc'; ctx.fillText(fight ? `BASE (em combate: sem proteção por ${Math.ceil(p.fight)}s)` : 'BASE (zona segura)', BASE.x, (BASE.y + BASE.r) * TILT - 10);
   }
   // portais: dois anéis no chão (o de dentro pulsa) e o nome do mapa de destino

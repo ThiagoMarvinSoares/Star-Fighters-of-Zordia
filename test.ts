@@ -6,6 +6,7 @@ import { parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, carg
 import type { Enemy } from './src/game/state.ts';
 import { HARD, ENGINES, mount } from './src/game/models.ts';
 import { update, hit, explode, keepOut, travel, resume } from './src/game/sim.ts';
+import { MISSIONS, mission, needsTalk, questNow, questGoal, progress, talkNow, talkDone } from './src/game/missions.ts';
 import { keys, seed } from './src/game/util.ts';
 import * as THREE from 'three';
 import { TILT, COSV, minimap, toWorld, onScreen } from './src/view/camera.ts';
@@ -411,6 +412,46 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   save.mods.splice(0, save.mods.length, ...mods0);
   enemies.length = 0; enemies.push(...all); b.hostile = false; b.atk = 0; put(b, home.x, home.y);
   p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; p.sh = stats().maxSh; strikes.length = 0;
+}
+
+// missões: a sequência do tutorial (Drones, laser, amostras) pelo motor genérico; o progresso de antes das missões
+// (save.tut) continua do mesmo ponto; e todas as missões apontam para missões que existem
+{
+  reset();
+  const keep = {quest: save.quest, credits: save.credits, mods: [...save.mods], inv: [...save.inv], cargo: {...save.cargo}};
+  for (const m of MISSIONS) assert(!m.next || mission(m.next), `${m.id}: a próxima missão não existe`);
+  const lines = () => talkNow()!.lines.map(l => l[0]);
+  delete save.quest; delete save.tut;
+  assert(needsTalk() && questNow().id === 'boas-vindas' && questNow().stage === 'offer', 'sem nada salvo: a primeira missão espera na base');
+  assert(lines().every(w => w === 'huedro'));
+  talkDone(); assert.equal(questGoal()!.goal, 'Destrua 3 Drones (0/3)');
+  progress({kill: 'raider'}); progress({buy: 'laser'}); assert.equal(questNow().n, 0, 'o que a missão não pede não conta');
+  for (let i = 0; i < 3; i++) progress({kill: 'drone'});
+  assert(needsTalk() && questNow().stage === 'ready', 'três Drones: volta para conversar');
+  assert(talkNow()!.shop, 'a entrega emenda o início da próxima, que abre o hangar');
+  talkDone(); assert(questNow().id === 'primeiro-laser' && questNow().stage === 'active' && !needsTalk());
+  p.x = BASE.x; p.y = BASE.y; save.credits = 1e6;
+  assert(buyMod('S1') && questNow().stage === 'active', 'comprar outra coisa não conta');
+  assert(buyMod('L1') && questNow().stage === 'ready', 'comprar um laser cumpre');
+  assert.deepEqual([...new Set(lines())], ['huedro', 'fabricio'], 'o Huedro passa a palavra ao Fabrício');
+  save.mods.splice(0, save.mods.length, ...save.mods.filter(k => MODS[k].type !== 'mining')); save.inv.length = 0;
+  assert.deepEqual(talkDone().items, ['D1'], 'o Fabrício entrega o Minerador Mk1');
+  assert(save.mods.includes('D1') && questGoal()!.who === 'Fabrício');
+  progress({mine: 'cyan', amount: 50}); progress({mine: 'purple', amount: 19.5}); assert.equal(questNow().stage, 'active');
+  progress({mine: 'purple', amount: .5}); assert.equal(questNow().stage, 'ready');
+  save.cargo.purple = 25; const cr0 = save.credits;
+  assert.equal(talkDone().credits, 300);
+  assert(save.cargo.purple === 5 && save.credits === cr0 + 300 && questNow().stage === 'done' && !needsTalk() && questGoal() === null, 'amostras entregues, pagamento, fim da sequência');
+  // progresso de antes das missões: cada passo antigo vira o ponto equivalente
+  for (const [tut, id, stage, n] of [[1, 'boas-vindas', 'active', 2], [4, 'primeiro-laser', 'ready', 0], [5, '', 'done', 0], [6, 'amostras', 'active', 7]] as const) {
+    delete save.quest; save.tut = tut; save.tutN = 2;
+    if (tut === 6) save.tutN = 7;
+    assert.deepEqual([questNow().id, questNow().stage, questNow().n, save.tut], [id, stage, n, undefined], `tut ${tut}`);
+  }
+  assert.deepEqual(parseSave({credits: 0, ship: 'scout', mods: [], quest: {id: 'amostras', stage: 'active', n: 4}})!.quest, {id: 'amostras', stage: 'active', n: 4});
+  assert.equal(parseSave({credits: 0, ship: 'scout', mods: [], quest: {id: 'x', stage: 'talvez', n: 1}})!.quest, undefined);
+  save.quest = keep.quest; save.credits = keep.credits; Object.assign(save.cargo, keep.cargo);
+  save.mods.splice(0, save.mods.length, ...keep.mods); save.inv.splice(0, save.inv.length, ...keep.inv);
 }
 
 // o bico da nave aponta para o alvo enquanto ela o ataca, mesmo voando para outro lado; sem atacar, aponta para onde vai

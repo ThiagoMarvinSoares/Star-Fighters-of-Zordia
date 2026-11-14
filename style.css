@@ -157,6 +157,9 @@ canvas{display:block;cursor:crosshair}
 #bag:hover{border-color:#6cf}
 #bag svg{width:26px;height:26px;fill:none;stroke:#9fd8ff;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 #bag span{position:absolute;left:0;right:0;bottom:-18px;font:12px monospace;color:#789;text-align:center}
+/* botão do tutorial, à direita do botão do inventário */
+#tutorial{position:fixed;left:calc(50% + 323px * var(--ui,1));bottom:calc(26px * var(--ui,1));transform:scale(var(--ui,1));transform-origin:bottom left;width:46px;height:46px;padding:0;background:#0b1220cc;border:1px solid #2a4a6a;border-radius:6px;cursor:pointer;color:#ffd45a;font:700 22px system-ui,sans-serif}
+#tutorial:hover{border-color:#ffd45a}
 #hotbar{position:fixed;left:50%;bottom:calc(26px * var(--ui,1));transform:translateX(-50%) scale(var(--ui,1));transform-origin:bottom center;display:flex;gap:6px}
 #hotbar button{position:relative;width:46px;height:46px;padding:0;display:grid;place-items:center;background:#0b1220cc;border:1px solid #2a4a6a;border-radius:6px;cursor:pointer}
 #hotbar button:disabled{opacity:.45;cursor:default}
@@ -227,6 +230,28 @@ canvas{display:block;cursor:crosshair}
   background:linear-gradient(var(--a),var(--b));box-shadow:0 0 6px var(--b);transition:width .15s linear}
 .hudp .tr span{position:absolute;right:8px;top:0;line-height:16px;font-size:11px;font-weight:700;color:var(--a);text-shadow:0 0 3px #000,0 0 3px #000}
 .hudp .tr span b{color:#fff}
+/* conversa do Comandante Augusto (tutorial): painel no rodapé, acima da barra de atalhos */
+#talk{position:fixed;left:50%;bottom:calc(96px * var(--ui,1));transform:translateX(-50%) scale(var(--ui,1));transform-origin:bottom center;z-index:20;
+  display:flex;gap:14px;align-items:stretch;width:min(640px,94vw);box-sizing:border-box;padding:12px 16px 12px 12px;border:1px solid #3cdcff;background:linear-gradient(#0b1a33f7,#060d1cf7);
+  box-shadow:0 0 18px #3cdcff55;font:14px/1.45 system-ui,'Segoe UI',sans-serif;color:#cfe6f5}
+#talk[hidden]{display:none}
+/* retrato: recorte do rosto e dos ombros, com moldura dourada */
+#talk .face{flex:none;width:120px;height:140px;overflow:hidden;border:2px solid #ffd45a;background:#000;box-shadow:0 0 12px #ffd45a44}
+#talk .face img{display:block} /* largura e recorte vêm de cada personagem (WHO, em ui/tutorial.ts) */
+#talk .body{flex:1;min-width:0;display:flex;flex-direction:column}
+#talk .who{margin-bottom:6px}
+#talk b{display:block;color:#fff;font-size:15px}
+#talk small{display:block;color:#7f97b0;font-size:11px}
+#talk p{flex:1;margin:0 0 10px;min-height:3em}
+#talk .act{display:flex;justify-content:space-between;align-items:center}
+#talk button{font:inherit;cursor:pointer}
+#talk .go{padding:6px 18px;border:1px solid #3cdcff;background:linear-gradient(#1c8fc0,#0e5a86);color:#fff;font-weight:600}
+#talk .skip{padding:0;border:0;background:none;color:#7f97b0;font-size:12px;text-decoration:underline}
+/* objetivo do tutorial, abaixo do painel do jogador */
+#goal{position:fixed;left:12px;top:calc(12px + 100px * var(--ui,1));transform:scale(var(--ui,1));transform-origin:top left;max-width:300px;
+  padding:7px 11px;border-left:3px solid #ffd45a;background:#0b1220cc;font:13px/1.35 system-ui,'Segoe UI',sans-serif;color:#fff;pointer-events:none}
+#goal small{display:block;color:#ffd45a;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+#goal em{display:block;margin-top:3px;color:#7f97b0;font-size:11px;font-style:normal}
 #hud{left:12px;top:12px;transform:scale(var(--ui,1));transform-origin:top left;--edge:#3cdcff;--glow:#3cdcff59}
 #target{left:50%;top:12px;transform:translateX(-50%) scale(var(--ui,1));transform-origin:top center;--edge:#ff6a5a;--glow:#ff6a5a59}
 #target .pt{background:#ff6a5a99}

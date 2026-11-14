@@ -12,6 +12,7 @@ import { syncHotbar } from './ui/hotbar.ts';
 import { playEvents, preloadSounds } from './view/audio.ts';
 import { syncHud } from './ui/hud.ts';
 import { enter } from './ui/account.ts';
+import { syncMissions } from './ui/missions.ts';
 
 const cv = document.getElementById('c') as HTMLCanvasElement;
 // O canvas tem os pixels reais da tela (até 2x), para as naves saírem nítidas em monitores de alta densidade; o jogo
@@ -89,6 +90,7 @@ requestAnimationFrame(function loop(ts) {
   draw();
   syncHotbar();
   syncHud();
+  syncMissions();
   playEvents();
   requestAnimationFrame(loop);
 });

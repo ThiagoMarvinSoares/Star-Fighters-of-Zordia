@@ -3,6 +3,9 @@ import { START, SHIPS, MODS, ORES, ACCURACY, MAPS, HOME } from './data.ts';
 import type { EnemyDef, MapDef, MapKey, ModKey, ModType, OreKey, ShipKey } from './data.ts';
 import type { Vec3 } from './models.ts';
 
+/** offer = a conversa de início está esperando na base; active = cumprindo o objetivo; ready = objetivo cumprido, falta
+ *  entregar na base; done = não há mais missão na sequência */
+export type QuestStage = 'offer' | 'active' | 'ready' | 'done';
 export interface Save {
   credits: number;
   /** nave em uso */
@@ -21,6 +24,10 @@ export interface Save {
   /** chefes destruídos: por mapa, o instante (relógio do mundo, em ms) em que cada um volta. Recarregar a página não
    *  traz o chefe de volta antes da hora. */
   boss?: Partial<Record<MapKey, number>>;
+  /** missão atual (game/missions.ts): qual, em que fase e quanto do objetivo já foi feito */
+  quest?: { id: string; stage: QuestStage; n: number };
+  /** do tutorial antigo, de antes das missões: só lidos uma vez, para continuar do mesmo ponto (ver game/missions.ts) */
+  tut?: number; tutN?: number;
 }
 export interface Stats {
   maxHp: number; maxSh: number; dmg: number; speed: number;
@@ -150,7 +157,10 @@ export function parseSave(s: any): Save | null {
               ...(s.pos && Object.hasOwn(MAPS, s.pos.map) && [s.pos.x, s.pos.y, s.pos.hp, s.pos.sh].every(Number.isFinite)
                   && {pos: {map: s.pos.map, x: +s.pos.x, y: +s.pos.y, hp: +s.pos.hp, sh: +s.pos.sh}}),
               ...(s.boss && typeof s.boss === 'object'
-                  && {boss: Object.fromEntries(Object.entries(s.boss).filter(([k, v]) => Object.hasOwn(MAPS, k) && Number.isFinite(v)))})};
+                  && {boss: Object.fromEntries(Object.entries(s.boss).filter(([k, v]) => Object.hasOwn(MAPS, k) && Number.isFinite(v)))}),
+              ...(s.quest && typeof s.quest.id === 'string' && ['offer', 'active', 'ready', 'done'].includes(s.quest.stage) && Number.isFinite(s.quest.n)
+                  && {quest: {id: s.quest.id, stage: s.quest.stage, n: +s.quest.n}}),
+              ...(Number.isInteger(s.tut) && s.tut >= 0 && {tut: s.tut}), ...(Number.isInteger(s.tutN) && s.tutN >= 0 && {tutN: s.tutN})};
     }
   return null;
 }
@@ -214,12 +224,17 @@ export const enemies: Enemy[] = [], shots: Shot[] = [], texts: FloatText[] = [],
 // base (atBase): a regra mora aqui, e a tela (hangar.ts) só a consulta para desligar botões e dizer o motivo.
 const settle = () => { const st = stats(); p.hp = Math.min(p.hp, st.maxHp); p.sh = Math.min(p.sh, st.maxSh); persist(); };
 export const freeSlot = (type: ModType) => count(type) < SHIPS[save.ship].slots[type];
+/** avisados a cada módulo comprado (as missões usam, para objetivos do tipo "compre um laser") */
+export const onBought: ((k: ModKey) => void)[] = [];
+const bought = (k: ModKey) => { for (const f of onBought) f(k); };
 /** compra um módulo: vai direto para a nave se houver slot livre do tipo, senão fica no inventário */
 export function buyMod(k: ModKey) {
   if (!atBase() || save.credits < MODS[k].cost) return false;
-  save.credits -= MODS[k].cost; (freeSlot(MODS[k].type) ? save.mods : save.inv).push(k); settle();
+  save.credits -= MODS[k].cost; (freeSlot(MODS[k].type) ? save.mods : save.inv).push(k); bought(k); settle();
   return true;
 }
+/** dá um módulo de presente (missão): vai para a nave se houver slot livre do tipo, senão para o inventário */
+export function giveMod(k: ModKey) { (freeSlot(MODS[k].type) ? save.mods : save.inv).push(k); settle(); }
 /** vende por metade do preço o módulo i da nave ('mods') ou do inventário ('inv') */
 export function sellMod(from: 'mods' | 'inv', i: number) {
   const k = save[from][i];

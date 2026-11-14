@@ -7,6 +7,7 @@ import type { Body, Enemy, Player, Rock } from './state.ts';
 import { clamp, dist, rnd, rand } from './util.ts';
 import type { Point } from './util.ts';
 import { HARD, ENGINES, SCALE, mount } from './models.ts';
+import { progress } from './missions.ts';
 
 type Heading = Point & { a: number };
 
@@ -228,7 +229,7 @@ export function update(dt: number) {
     else if (free <= 1e-9) { p.mining = null; float(p, 'Porão cheio', '#fa4', 2); }
     else if (dist(p, rock) <= MINE_RANGE) {
       const got = Math.min(st.mine / ORES[rock.ore].hard * dt, rock.left, free); // minério mais duro sai mais devagar
-      rock.left -= got; save.cargo[rock.ore] += got; p.beam = true;
+      rock.left -= got; save.cargo[rock.ore] += got; p.beam = true; progress({mine: rock.ore, amount: got});
       if (rock.left <= 1e-9) { // esgotou: o asteroide se desfaz (outro nasce longe dali, mais abaixo)
         rocks.splice(rocks.indexOf(rock), 1); p.mining = null; p.beam = false;
         explode(rock, rock.r * .5); float(rock, ORES[rock.ore].name + ' esgotada', ORES[rock.ore].color, 1.5);
@@ -340,7 +341,7 @@ export function update(dt: number) {
         bossAt[world.map] = now + boss.respawn; save.boss = {...save.boss, [world.map]: Date.now() + boss.respawn * 1000};
         drops.push({x: tg.x, y: tg.y, item: BOSS_DROP});
       }
-      save.credits += tg.t.reward; persist();
+      save.credits += tg.t.reward; progress({kill: tg.t.key}); persist();
       float(tg, '+' + tg.t.reward + ' cr', '#fd4', 1.5);
     }
   }
