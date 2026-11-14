@@ -1,8 +1,8 @@
 // Desenho: lê o estado e pinta o canvas. Nunca altera o estado do jogo.
 // Tudo aqui é canvas 2D, menos as naves: elas são desenhadas em 3D por ships3d.ts e copiadas para cá.
-import { RANGE, STATION_R, PORTAL_R, MISSILE_R, MINE_RANGE, MAPS, MODS, MODEL_DIR, ORES } from '../game/data.ts';
+import { ENEMY_MISSILE, RANGE, STATION_R, PORTAL_R, MISSILE_R, MINE_RANGE, MAPS, MODS, MODEL_DIR, ORES } from '../game/data.ts';
 import type { Shot } from '../game/state.ts';
-import { save, stats, cargoUsed, p, enemies, rocks, drops, shots, texts, parts, events, view, map } from '../game/state.ts';
+import { save, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, view, map } from '../game/state.ts';
 import type { Stats } from '../game/state.ts';
 import { clamp } from '../game/util.ts';
 import type { Point } from '../game/util.ts';
@@ -35,7 +35,8 @@ function stamp(img: CanvasImageSource, x: number, y: number, w: number, rot = 0,
 interface Flash { x: number; y: number; t0: number; life: number; name: string; color: string; size: number; grow: number; rot: number }
 const flashes: Flash[] = [];
 
-// míssil em voo: o modelo 3D do próprio item (o mesmo do ícone)
+// míssil em voo: o modelo 3D do próprio item (o mesmo do ícone). Os inimigos usam sempre este:
+const ENEMY_MISSILE_MODEL = 'missiles/missil2';
 const missileModel = (q: Shot) => q.missile && q.mod && MODS[q.mod].model ? `${MODEL_DIR.missile}/${MODS[q.mod].model}` : undefined;
 
 const ctx = (document.getElementById('c') as HTMLCanvasElement).getContext('2d')!;
@@ -119,6 +120,9 @@ function shield(st: Stats, t: number) {
 // círculo no plano do mundo = elipse na tela
 const ring = (o: Point, r: number, dy = 0) => { ctx.beginPath(); ctx.ellipse(o.x, o.y * TILT - dy, r, r * TILT, 0, 0, 7); };
 
+// pulso do aviso de um míssil inimigo: uma batida a cada ENEMY_MISSILE.pulse s desde o começo do aviso, de modo que o
+// risco pisca duas vezes num aviso normal e uma só quando o Leviatã está furioso (aviso pela metade)
+const beat = (s: {warn: number; warn0: number}) => .55 + .45 * Math.cos((s.warn0 - s.warn) / ENEMY_MISSILE.pulse * 2 * Math.PI);
 // Partículas (chamas, explosões), em duas camadas em volta das naves 3D. A câmera olha de baixo da tela para cima:
 // numa nave que desce a tela, a traseira fica do lado de lá do casco, então a chama dela vai por baixo (under); nas
 // outras direções a traseira está à vista e a chama vai por cima, saindo do bocal. Explosões vão sempre por cima.
@@ -174,6 +178,22 @@ export function draw() {
     ctx.fillStyle = '#d9c4ff'; ctx.fillText('Portal: ' + MAPS[g.to].name, g.x, (g.y + PORTAL_R) * TILT + 18);
   }
 
+  // risco dos mísseis inimigos, no chão: uma faixa vermelha da largura que acerta e uma linha no meio, que pulsam e
+  // ficam mais fortes até o lançamento
+  for (const s of strikes) if (!s.live && s.homing) { // teleguiado: em vez de linha, a mira travada no jogador (dois anéis que se fecham)
+    const k = 1 - s.warn / s.warn0, pulse = beat(s), rr = st.r * SCALE;
+    ctx.strokeStyle = '#ff3030'; ctx.globalAlpha = (.5 + .5 * k) * pulse;
+    ctx.lineWidth = 3; ring(p, rr + 30 * (1 - k)); ctx.stroke(); ctx.lineWidth = 1.5; ring(p, rr + 14 + 40 * (1 - k)); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = 2;
+  }
+  for (const s of strikes) if (!s.live && !s.homing) {
+    const k = 1 - s.warn / s.warn0, pulse = beat(s);
+    const ex = s.x + Math.cos(s.a) * s.len, ey = (s.y + Math.sin(s.a) * s.len) * TILT;
+    ctx.lineCap = 'round'; ctx.strokeStyle = '#ff3030';
+    ctx.globalAlpha = (.1 + .2 * k) * pulse; ctx.lineWidth = 36; ctx.beginPath(); ctx.moveTo(s.x, s.y * TILT); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.globalAlpha = (.45 + .55 * k) * pulse; ctx.lineWidth = 2 + 2 * k; ctx.beginPath(); ctx.moveTo(s.x, s.y * TILT); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = 2;
+  }
   drawParts(true); // chamas de quem voa em direção à câmera: atrás do casco
   // naves: anéis de alcance e de alvo por baixo, a camada 3D, e por cima escudo, barras e nomes
   if (p.target) {
@@ -197,6 +217,7 @@ export function draw() {
                 ...vis.map(e => ({id: e, o: e, r: e.t.r, key: e.t.key})),
                 ...stones.map(k => ({id: k, o: {x: k.x, y: k.y, a: k.a + spin}, r: k.r, model: 'asteroids/' + ORES[k.ore].model})),
                 {id: p, o: p, r: st.r, key: save.ship},
+                ...strikes.filter(s => s.live && onScreen(s)).map(s => ({id: s, o: {x: s.x, y: s.y, a: s.a}, r: MISSILE_R, model: ENEMY_MISSILE_MODEL, h: 10})),
                 ...shots.flatMap(q => { const model = q.live && onScreen(q) && missileModel(q); return model ? [{id: q, o: q, r: MISSILE_R, model, h: q.h}] : []; })],
                p, cw / z, ch / z, cv3w(), cv3h());
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(stage.canvas, 0, 0); ctx.restore(); // pixel a pixel, sem escala
@@ -266,6 +287,11 @@ export function draw() {
     }
     const len = q.missile ? 22 : 16; ctx.lineWidth = q.missile ? 6 : 3; // míssil: traço mais grosso e comprido
     ctx.strokeStyle = q.c; ctx.beginPath(); ctx.moveTo(q.x - Math.cos(q.a) * len, y - Math.sin(q.a) * len * TILT); ctx.lineTo(q.x, y); ctx.stroke();
+  }
+  // míssil inimigo enquanto o modelo 3D não carrega: um traço vermelho grosso
+  if (!hasModel(ENEMY_MISSILE_MODEL)) for (const s of strikes) if (s.live) {
+    const y = s.y * TILT - 10 * COSV; ctx.strokeStyle = '#ff5040'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(s.x - Math.cos(s.a) * 24, y - Math.sin(s.a) * 24 * TILT); ctx.lineTo(s.x, y); ctx.stroke();
   }
   for (let i = flashes.length; i--;) { // clarões: crescem e somem
     const f = flashes[i], age = (nowMs - f.t0) / f.life, img = age < 1 && fx(f.name, f.color);

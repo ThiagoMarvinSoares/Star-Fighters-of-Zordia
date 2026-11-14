@@ -75,7 +75,16 @@ export interface Enemy extends Body {
    *  atenção ao jogador. */
   hx: number; hy: number; back: boolean;
   hostile: boolean;
+  /** segundos até poder lançar o próximo míssil (só quem tem EnemyDef.missile); atk = vez de qual ataque do rodízio */
+  mcd: number; atk: number;
 }
+/** Míssil inimigo: enquanto warn > 0 é só o risco de aviso, saindo de quem atira (x, y acompanham o inimigo) na direção
+ *  a, com len de comprimento; depois (live) voa reto por essa linha. flown = quanto já percorreu. */
+export interface Strike { src: Enemy; a: number; len: number; warn: number; /** quanto o aviso durava ao começar */ warn0: number; dmg: number; x: number; y: number; flown: number; live: boolean;
+  /** velocidade de voo; homing = teleguiado (vira para o jogador, até a curva máxima) */
+  speed: number; homing?: boolean;
+  /** é o segundo míssil de quem tem EnemyDef.followUp (não puxa um terceiro) */
+  second?: boolean }
 /** espólio no mapa (cubo): passar por cima recolhe o item para o inventário */
 export interface Drop { x: number; y: number; item: ModKey }
 /** asteroide: parado no mapa, some quando o minério (left) acaba */
@@ -184,7 +193,7 @@ export const map = (): MapDef => MAPS[world.map];
 const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
                           target: null, firing: false, auto: false, multi: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
-export const rocks: Rock[] = [], drops: Drop[] = [];
+export const rocks: Rock[] = [], drops: Drop[] = [], strikes: Strike[] = [];
 /** Troca o progresso atual pelo que veio de fora (o da conta, ao entrar) e conserta a nave para ele; false se não serve.
  *  Grava no navegador, mas não avisa onPersist: o servidor acabou de mandar esse mesmo progresso. */
 export function adopt(raw: unknown) {
@@ -262,7 +271,7 @@ export const sellCargo = () => (Object.keys(ORES) as OreKey[]).reduce((v, k) => 
 
 /** O que aconteceu no último quadro da simulação. Ela só registra; quem toca som (audio.ts) lê daqui. */
 export type GameEvent =
-  | { kind: 'shot'; x: number; y: number; /** altura do cano e cor do tiro (para o clarão do disparo) */ h: number; c: string; /** tiro do jogador (senão, de inimigo) */ mine: boolean; /** laser que disparou, nos tiros do jogador */ mod?: ModKey }
+  | { kind: 'shot'; /** lançamento de míssil inimigo (o som é o de míssil) */ missile?: boolean; x: number; y: number; /** altura do cano e cor do tiro (para o clarão do disparo) */ h: number; c: string; /** tiro do jogador (senão, de inimigo) */ mine: boolean; /** laser que disparou, nos tiros do jogador */ mod?: ModKey }
   | { kind: 'hit'; x: number; y: number; /** onde o tiro estava ao acertar, e a altura dele (para o clarão do impacto) */ at: { x: number; y: number; h: number }; /** direção em que o tiro vinha */ a: number; /** acertou o jogador */ onPlayer: boolean; /** o escudo absorveu (senão, pegou no casco) */ shielded: boolean }
   | { kind: 'boom'; x: number; y: number; /** raio da nave que explodiu */ r: number };
 export const events: GameEvent[] = [];

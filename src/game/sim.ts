@@ -1,8 +1,8 @@
 // Simulação: as regras do jogo. Só altera o estado; não sabe nada de canvas, tela nem teclado.
-import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, PORTAL_R, PICKUP_R, BOSS_DROP, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
+import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, ENEMY_MISSILE, PORTAL_R, PICKUP_R, BOSS_DROP, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
 import type { EnemyDef, MapDef, MapKey } from './data.ts';
 import type { ModelKey, ModKey } from './data.ts';
-import { save, persist, stats, cargoUsed, p, enemies, rocks, drops, shots, texts, parts, events, world, map } from './state.ts';
+import { save, persist, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, world, map } from './state.ts';
 import type { Body, Enemy, Player, Rock } from './state.ts';
 import { clamp, dist, rnd, rand } from './util.ts';
 import type { Point } from './util.ts';
@@ -19,7 +19,7 @@ export const keepOut = () => { const b = map().base; return b ? b.r + KEEP_MARGI
 /** Troca de mapa: a nave aparece em (x, y) de to. O mapa que ficou para trás é descartado (ao voltar, é repovoado). */
 export function travel(to: MapKey, x: number, y: number) {
   world.map = to; seeded = false;
-  enemies.length = rocks.length = drops.length = shots.length = parts.length = texts.length = 0; // espólio deixado para trás se perde
+  enemies.length = rocks.length = drops.length = strikes.length = shots.length = parts.length = texts.length = 0; // espólio deixado para trás se perde
   Object.assign(p, {x, y, tx: x, ty: y, target: null, mining: null, beam: false});
 }
 
@@ -86,7 +86,7 @@ export function explode(o: Point, r: number) {
   events.push({kind: 'boom', x: o.x, y: o.y, r});
 }
 
-const born = (t: EnemyDef, x: number, y: number): Enemy => ({t, x, y, wx: x, wy: y, hx: x, hy: y, back: false, a: 0, hp: t.hp, sh: t.sh, cd: 0, lastHit: -99, hostile: false});
+const born = (t: EnemyDef, x: number, y: number): Enemy => ({t, x, y, wx: x, wy: y, hx: x, hy: y, back: false, mcd: rnd(2, ENEMY_MISSILE.cd), atk: 0, a: 0, hp: t.hp, sh: t.sh, cd: 0, lastHit: -99, hostile: false});
 // Sorteia com pick() um ponto que passe em ok() e fique a pelo menos far do jogador. Em mapa pequeno pode não existir
 // ponto tão longe: depois de 40 candidatos válidos fica o mais distante deles, em vez de sortear para sempre. (Contam os
 // válidos, não os sorteios: numa faixa em que a maior parte dos pontos cai fora do mapa, 40 sorteios eram poucos e às
@@ -264,11 +264,12 @@ export function update(dt: number) {
     // perdeu o jogador de vista, ou foi longe demais de casa: desiste. Longe de casa ele ainda volta (back) sem dar
     // atenção ao jogador, até estar de novo bem dentro do território dele.
     const dh = Math.hypot(e.x - e.hx, e.y - e.hy);
-    if (dh > LEASH) { calm(e); e.back = true; e.wx = e.hx; e.wy = e.hy; }
-    else if (dh < LEASH * (e.hostile ? .85 : .5)) e.back = false; // atacado no caminho de volta, reage mais cedo
-    if (ed > 1400) calm(e);
+    const leash = e.t.leash ?? LEASH;
+    if (dh > leash) { calm(e); e.back = true; e.wx = e.hx; e.wy = e.hy; }
+    else if (dh < leash * (e.hostile ? .85 : .5)) e.back = false; // atacado no caminho de volta, reage mais cedo
+    if (ed > (e.t.sight ?? 1400)) calm(e);
     if (now - e.lastHit > 6) e.sh = Math.min(e.t.sh, e.sh + e.t.sh * .05 * dt);
-    e.cd -= dt;
+    e.cd -= dt; e.mcd -= dt;
     if (!safe && !e.back && (e.hostile || e.t.aggro && ed < Math.max(450, e.t.range ?? 0))) {
       if (ed <= 280) e.a = Math.atan2(p.y - e.y, p.x - e.x);
       else if (approach(e, p.x, p.y, e.t.speed * dt)) thrust(e, e.t.r, e.t.key, e.t.color);
@@ -276,6 +277,17 @@ export function update(dt: number) {
         e.cd = 1.3;
         const n = HARD[e.t.key].length;
         for (let i = 0; i < n; i++) shoot(e, e.t.r, e.t.key, i, p, Math.round(e.t.dmg / n), e.t.color, i / n * 1.3);
+      }
+      // míssil: mira onde o jogador está agora e avisa com o risco; não corrige a mira depois
+      if (e.t.missile && e.mcd <= 0 && ed < (e.t.range ?? 500)) {
+        const rage = e.t.enrage && e.sh <= 0, R = ENEMY_MISSILE.rage, wk = rage ? R.warn : 1; // furioso: avisos curtos, rodízio rápido
+        e.mcd = rage ? R.cd : ENEMY_MISSILE.cd;
+        const kind = e.t.attacks?.[e.atk++ % e.t.attacks.length] ?? 'line', a0 = Math.atan2(p.y - e.y, p.x - e.x), H = ENEMY_MISSILE.homing;
+        const warn = ENEMY_MISSILE.warn * wk, m = {src: e, a: a0, len: (e.t.range ?? 500) + ENEMY_MISSILE.reach, warn, warn0: warn, speed: ENEMY_MISSILE.speed,
+                   dmg: Math.round(e.t.dmg * ENEMY_MISSILE.mult), x: e.x, y: e.y, flown: 0, live: false};
+        if (kind === 'cone') for (const d of [-ENEMY_MISSILE.cone, 0, ENEMY_MISSILE.cone]) strikes.push({...m, a: a0 + d});
+        else if (kind === 'homing') strikes.push({...m, homing: true, speed: H.speed, len: H.reach, warn: H.warn * wk, warn0: H.warn * wk});
+        else strikes.push(m);
       }
     } else {
       if (Math.hypot(e.wx - e.x, e.wy - e.y) < 10) { // chegou: sorteia outro ponto para vagar, fora da área da base
@@ -333,9 +345,42 @@ export function update(dt: number) {
     }
   }
 
+  // ---------- mísseis inimigos ----------
+  // Primeiro o risco (o início acompanha quem atira; se ele morre, o aviso some), depois o voo reto. Acerta se a nave
+  // estiver na linha por onde ele passa neste quadro; a salvo na base, passa sem causar dano.
+  for (let i = strikes.length; i--;) {
+    const s = strikes[i];
+    if (!s.live) {
+      if (!enemies.includes(s.src)) { strikes.splice(i, 1); continue; }
+      s.x = s.src.x; s.y = s.src.y;
+      if ((s.warn -= dt) > 0) continue;
+      s.live = true;
+      events.push({kind: 'shot', missile: true, x: s.x, y: s.y, h: 10, c: '#ff5040', mine: false});
+      // quem tem followUp, ao soltar o primeiro, já mira o segundo onde o jogador está agora: no lado para onde ele desviou
+      if (s.src.t.followUp && !s.second)
+        strikes.push({...s, a: Math.atan2(p.y - s.src.y, p.x - s.src.x), warn: ENEMY_MISSILE.followWarn, warn0: ENEMY_MISSILE.followWarn, flown: 0, live: false, second: true});
+    }
+    if (s.homing && !safe) { // teleguiado: vira para o jogador, no máximo turn por segundo (a curva aberta é o que permite despistá-lo)
+      const d = Math.atan2(p.y - s.y, p.x - s.x) - s.a, turn = ENEMY_MISSILE.homing.turn * dt;
+      s.a += clamp(Math.atan2(Math.sin(d), Math.cos(d)), -turn, turn);
+    }
+    const cx = Math.cos(s.a), sy = Math.sin(s.a), step = Math.min(s.speed * dt, s.len - s.flown), x0 = s.x, y0 = s.y;
+    s.x += cx * step; s.y += sy * step; s.flown += step;
+    flame({x: s.x - cx * 14, y: s.y - sy * 14}, s.a, 2, '#ff7040', 10);
+    // distância da nave até o trecho percorrido neste quadro
+    const vx = s.x - x0, vy = s.y - y0, f = clamp(((p.x - x0) * vx + (p.y - y0) * vy) / (vx * vx + vy * vy || 1), 0, 1);
+    if (!safe && Math.hypot(p.x - x0 - vx * f, p.y - y0 - vy * f) < st.r * SCALE * .7) {
+      strikes.splice(i, 1);
+      events.push({kind: 'hit', x: p.x, y: p.y, at: {x: s.x, y: s.y, h: 10}, a: s.a, onPlayer: true, shielded: p.sh > 0});
+      hit(p, s.dmg); float(p, '-' + s.dmg, '#ff5040', 1.3); explode(s, 8);
+      continue;
+    }
+    if (s.flown >= s.len - 1e-6) { strikes.splice(i, 1); if (s.homing) explode(s, 5); } // chegou ao fim sem acertar (o teleguiado se apaga com um estalo)
+  }
+
   // ---------- morte do jogador ----------
   if (p.hp <= 0) {
-    explode(p, st.r); shots.length = 0;
+    explode(p, st.r); shots.length = 0; strikes.length = 0;
     const SPAWN = MAPS[HOME].spawn; // renasce sempre na base do mapa inicial, esteja onde estiver
     if (world.map !== HOME) travel(HOME, SPAWN.x, SPAWN.y);
     Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});

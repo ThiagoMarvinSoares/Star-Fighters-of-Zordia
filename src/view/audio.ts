@@ -111,8 +111,8 @@ export function playEvents() {
     if (near <= 0 || ++n > MAX_PER_FRAME) continue;
     const pan = clamp(dx / 700, -1, 1), k = rnd(.94, 1.06); // k varia o tom para sons seguidos não soarem idênticos
     if (e.kind === 'shot') {
-      if (e.mine && e.mod && MODS[e.mod].type === 'missile') {
-        const rate = (LAUNCH[e.mod] ?? 1) * k;
+      if (e.missile || e.mine && e.mod && MODS[e.mod].type === 'missile') { // míssil, do jogador ou de inimigo
+        const rate = (e.mod && LAUNCH[e.mod] || .9) * k;
         if (!sample(ac, 'thrusterFire', .55 * GUNS * near, pan, rate, .75)) noise(ac, 900, 3200, .6, .3 * GUNS * near, pan); // sopro
         tone(ac, 'sine', 480 * rate, 1350 * rate, .5, .05 * GUNS * near, pan); // assobio subindo, baixinho
         continue;

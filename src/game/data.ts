@@ -16,6 +16,20 @@ export const KEEP_MARGIN = 250;
 /** Segundos "em combate" depois de o jogador atirar ou levar dano. Enquanto dura, a zona segura da base não o protege
  *  (os inimigos seguem atirando e a cura rápida não liga): entrar na base no meio da luta não salva ninguém. */
 export const COMBAT = 10;
+/** Mísseis inimigos (EnemyDef.missile). Não são teleguiados: o inimigo mira onde o jogador está, um risco vermelho mostra
+ *  a linha por warn segundos e então o míssil sai reto por ela, rápido, até o fim do risco. Quem sai da linha a tempo
+ *  escapa. cd = segundos entre mísseis de um mesmo inimigo; mult = dano em relação a uma salva de lasers dele; reach =
+ *  quanto o risco (e o voo do míssil) passa do alcance de tiro dele: 0 = o míssil vai exatamente até o alcance dele. */
+// followWarn = aviso do segundo míssil (EnemyDef.followUp); cone = abertura do leque, em radianos, entre o míssil do
+// meio e cada lateral; homing = o teleguiado: velocidade, curva máxima (rad/s), distância que voa antes de se apagar e aviso.
+// Com velocidade 380 e curva de 1,6 rad/s, ele faz curvas de uns 240 de raio: quem corta para o lado na hora certa o
+// faz passar direto, e quem foge em linha reta por 5 s o vê se apagar.
+export const ENEMY_MISSILE = {cd: 4, warn: 1, speed: 1500, mult: 2.5, reach: 0, followWarn: .7, cone: .35,
+                              homing: {speed: 380, turn: 1.6, reach: 2000, warn: .6},
+                              // fúria (EnemyDef.enrage, com o escudo zerado): os avisos duram warn vezes o normal e o rodízio anda a cada cd s
+                              rage: {warn: .5, cd: 2.5},
+                              /** o risco pulsa uma vez a cada pulse segundos: num aviso de 1 s, duas vezes; furioso, uma */
+                              pulse: .5};
 /** raio de um portal: encostar nele leva a nave para outro mapa */
 export const PORTAL_R = 70;
 /** Até onde um inimigo se afasta do ponto onde nasceu, vagando ou perseguindo. Passando disso ele desiste, se recupera
@@ -63,8 +77,19 @@ export interface EnemyDef {
   aggro: boolean;
   /** alienígena sem motor: não solta chama */
   organic?: boolean;
-  /** distância de tiro (padrão 500) */
+  /** distância de tiro (padrão 500); também é até onde vai o risco dos mísseis dele */
   range?: number;
+  /** quanto se afasta de casa perseguindo (padrão LEASH) e a que distância perde o jogador de vista (padrão 1400) */
+  leash?: number; sight?: number;
+  /** também lança mísseis (ENEMY_MISSILE): um risco vermelho avisa, depois o míssil sai reto */
+  missile?: boolean;
+  /** ao lançar um míssil, já mira um segundo para onde o jogador foi (quem desviou do primeiro), com aviso mais curto */
+  followUp?: boolean;
+  /** ataques de míssil em rodízio, um a cada ENEMY_MISSILE.cd (sem isto, sempre 'line'): 'line' = um reto; 'cone' = três
+   *  retos em leque, o do meio no jogador; 'homing' = um teleguiado, lento e de curva aberta, que dá para despistar */
+  attacks?: ('line' | 'cone' | 'homing')[];
+  /** sem escudo, fica furioso: avisos pela metade (o risco pulsa uma vez em vez de duas) e ataques mais seguidos (ENEMY_MISSILE.rage) */
+  enrage?: boolean;
 }
 
 // ---------- economia ----------
@@ -124,10 +149,10 @@ export const SLOT_ONE: Record<ModType, string> = {laser: 'arma', shield: 'escudo
 export const ENEMIES: EnemyDef[] = [
   {key: 'drone',       name: 'Drone',             hp: 150,   sh: 75,    dmg: 12,  speed: 170, reward: 120,  r: 14, color: '#ff8844', aggro: false, organic: true},
   {key: 'drone',       name: 'Drone Alfa',        hp: 350,   sh: 175,   dmg: 22,  speed: 180, reward: 260,  r: 19, color: '#ffbb44', aggro: false, organic: true},
-  {key: 'raider',      name: 'Raider',            hp: 750,   sh: 450,   dmg: 45,  speed: 200, reward: 550,  r: 20, color: '#ff4444', aggro: true},
-  {key: 'raider',      name: 'Raider Elite',      hp: 1600,  sh: 1000,  dmg: 85,  speed: 210, reward: 1100, r: 25, color: '#ff44aa', aggro: true},
-  {key: 'dreadnought', name: 'Dreadnought',       hp: 7500,  sh: 5000,  dmg: 160, speed: 120, reward: 2400, r: 34, color: '#cc44ff', aggro: true},
-  {key: 'dreadnought', name: 'Dreadnought Prime', hp: 16000, sh: 11000, dmg: 450, speed: 110, reward: 4800, r: 44, color: '#8844ff', aggro: true},
+  {key: 'raider',      name: 'Raider',            hp: 750,   sh: 450,   dmg: 45,  speed: 200, reward: 550,  r: 20, color: '#ff4444', aggro: true, missile: true},
+  {key: 'raider',      name: 'Raider Elite',      hp: 1600,  sh: 1000,  dmg: 85,  speed: 210, reward: 1100, r: 25, color: '#ff44aa', aggro: true, missile: true},
+  {key: 'dreadnought', name: 'Dreadnought',       hp: 7500,  sh: 5000,  dmg: 160, speed: 120, reward: 2400, r: 34, color: '#cc44ff', aggro: true, missile: true, range: 650, leash: 2200, sight: 2000},
+  {key: 'dreadnought', name: 'Dreadnought Prime', hp: 16000, sh: 11000, dmg: 450, speed: 110, reward: 4800, r: 44, color: '#8844ff', aggro: true, missile: true, followUp: true, range: 700, leash: 2600, sight: 2300},
 ];
 // Chefe: um só no mapa dele, rondando um ponto fixo; volta depois de destruído (posição e tempo ficam no mapa, em MAPS).
 // Fica fora de ENEMIES: não nasce por sorteio nem entra na conta de renda do teste de economia. É o objetivo de fim de
@@ -139,7 +164,7 @@ export const ENEMIES: EnemyDef[] = [
 export const BOSS_DROP: ModKey = 'C2';
 /** distância para recolher um espólio: é só passar por cima */
 export const PICKUP_R = 60;
-export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700};
+export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700, missile: true, attacks: ['line', 'cone', 'homing'], enrage: true};
 
 // ---------- mineração ----------
 // Asteroides espalhados pelo mapa guardam minério. Clicar num deles, com um minerador equipado e a nave a até

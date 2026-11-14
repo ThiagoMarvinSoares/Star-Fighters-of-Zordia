@@ -1,8 +1,8 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
+import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
-import { parseSave, persist, world, best, drops, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
+import { parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
 import { HARD, ENGINES, mount } from './src/game/models.ts';
 import { update, hit, explode, keepOut, travel, resume } from './src/game/sim.ts';
@@ -30,7 +30,7 @@ const put = (e: Enemy, x: number, y: number) => { e.x = e.wx = e.hx = x; e.y = e
 // alvo, armas e feixe desligados) e somem tiros, partículas e perseguições deixados pelo bloco anterior.
 const reset = () => {
   Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: null, multi: false, extra: [], mining: null, beam: false, cd: 0, mis: [], mleft: true, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
-  shots.length = 0; parts.length = 0;
+  shots.length = 0; parts.length = 0; strikes.length = 0;
   for (const e of enemies) e.hostile = false;
 };
 
@@ -324,6 +324,95 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   save.mods.length = 0; save.mods.push(...keep);
 }
 
+// mísseis inimigos: risco de aviso, depois voo reto e rápido; dão mais dano que uma salva de lasers e não são
+// teleguiados (quem sai da linha durante o aviso escapa)
+{
+  reset();
+  const all = [...enemies], e = enemies.find(o => o.t.name === 'Raider')!, home = {x: e.hx, y: e.hy};
+  enemies.length = 0; enemies.push(e); // só ele no mapa: nada de outros tiros no meio
+  const mods0 = [...save.mods]; save.mods.splice(0, save.mods.length, ...mods0.filter(m => MODS[m].type !== 'shield')); // sem escudo regenerando no meio da conta
+  const life = () => p.hp + p.sh;
+  const duel = (dodge: boolean) => {
+    put(e, 3000, 2000); p.x = p.tx = 3400; p.y = p.ty = 2000; p.hp = 1e6; p.sh = 0;
+    e.hostile = true; e.mcd = 0; e.cd = 1e9; strikes.length = 0; shots.length = 0; // e.cd: sem lasers, só o míssil
+    const hp0 = life();
+    frames(1);
+    assert(strikes.length === 1 && !strikes[0].live, 'o risco aparece antes do míssil');
+    const s = strikes[0];
+    assert(s.dmg > e.t.dmg, 'um míssil dói mais que uma salva de lasers');
+    if (dodge) { p.y = p.ty = 2000 + 150; } // sai da linha durante o aviso
+    for (let i = 0; i < 200 && strikes.length; i++) { e.cd = 1e9; put(e, 3000, 2000); e.hostile = true; e.mcd = 99; frames(1); }
+    return hp0 - life();
+  };
+  const took = duel(false);
+  assert.equal(took, Math.round(e.t.dmg * ENEMY_MISSILE.mult), 'parado na linha, leva o míssil');
+  assert.equal(duel(true), 0, 'saiu da linha durante o aviso: o míssil passa reto, sem perseguir');
+  save.mods.splice(0, save.mods.length, ...mods0);
+  enemies.length = 0; enemies.push(...all); e.hostile = false; p.hp = stats().maxHp; p.sh = stats().maxSh; strikes.length = 0;
+  put(e, home.x, home.y); // de volta à casa dele, para os blocos seguintes
+}
+
+// Dreadnought Prime: ao soltar o primeiro míssil, mira um segundo para onde o jogador desviou
+{
+  reset();
+  const all = [...enemies], e = enemies.find(o => o.t.name === 'Dreadnought Prime')!, home = {x: e.hx, y: e.hy};
+  enemies.length = 0; enemies.push(e);
+  const mods0 = [...save.mods]; save.mods.splice(0, save.mods.length, ...mods0.filter(m => MODS[m].type !== 'shield'));
+  put(e, 3000, 2000); p.x = p.tx = 3400; p.y = p.ty = 2000; p.hp = 1e6; p.sh = 0;
+  e.hostile = true; e.mcd = 0; e.cd = 1e9; strikes.length = 0; shots.length = 0;
+  frames(1);
+  p.y = p.ty = 2150; // desvia do primeiro durante o aviso
+  const hp0 = p.hp;
+  for (let i = 0; i < 200 && strikes.length; i++) { e.cd = 1e9; e.mcd = 99; put(e, 3000, 2000); e.hostile = true; frames(1); if (strikes.some(s => s.second)) break; }
+  const second = strikes.find(s => s.second)!;
+  assert(second && !second.live, 'o segundo risco aparece quando o primeiro sai');
+  assert(Math.abs(second.a - Math.atan2(150, 400)) < .01, 'e aponta para onde o jogador foi');
+  for (let i = 0; i < 200 && strikes.length; i++) { e.cd = 1e9; e.mcd = 99; put(e, 3000, 2000); e.hostile = true; frames(1); }
+  assert.equal(hp0 - p.hp, Math.round(e.t.dmg * ENEMY_MISSILE.mult), 'quem ficou parado no lado novo leva o segundo; o primeiro passou longe');
+  save.mods.splice(0, save.mods.length, ...mods0);
+  enemies.length = 0; enemies.push(...all); e.hostile = false; p.hp = stats().maxHp; p.sh = stats().maxSh; strikes.length = 0;
+  put(e, home.x, home.y); // de volta à casa dele, para os blocos seguintes
+}
+
+// Leviatã: três ataques de míssil em rodízio. Reto; leque de três (o do meio no jogador); e um teleguiado de curva aberta,
+// que acerta quem fica parado mas não vira mais que a curva máxima e se apaga depois de voar o alcance dele
+{
+  reset();
+  const all = [...enemies], b = enemies.find(o => o.t === BOSS)!, home = {x: b.hx, y: b.hy}, H = ENEMY_MISSILE.homing;
+  enemies.length = 0; enemies.push(b);
+  const mods0 = [...save.mods]; save.mods.splice(0, save.mods.length, ...mods0.filter(m => MODS[m].type !== 'shield'));
+  // parado, sem lasers e sem novo míssil; e sozinho no mapa (a reposição repovoa a cada quadro, e os recém-nascidos saem antes de agir)
+  const hold = () => { enemies.length = 0; enemies.push(b); b.cd = 1e9; b.mcd = 99; put(b, 3000, 2000); b.hostile = true; };
+  const launch = () => { strikes.length = 0; hold(); b.mcd = 0; frames(1); return [...strikes]; };
+  p.x = p.tx = 3500; p.y = p.ty = 2000; p.hp = 1e6; p.sh = 0; b.atk = 0;
+  const a0 = 0; // jogador bem à direita do chefe
+  assert.deepEqual(launch().map(s => [s.homing ?? false, +s.a.toFixed(3)]), [[false, a0]], '1: um reto');
+  assert.deepEqual(launch().map(s => +s.a.toFixed(3)), [-ENEMY_MISSILE.cone, a0, ENEMY_MISSILE.cone].map(v => +v.toFixed(3)), '2: leque de três, o do meio no jogador');
+  const [h] = launch();
+  assert(h.homing && h.speed < ENEMY_MISSILE.speed && strikes.length === 1, '3: um teleguiado, mais lento');
+  // parado: o teleguiado acerta
+  let hp0 = p.hp;
+  for (let i = 0; i < 400 && strikes.length; i++) { hold(); frames(1); }
+  assert.equal(hp0 - p.hp, Math.round(BOSS.dmg * ENEMY_MISSILE.mult), 'quem fica parado leva o teleguiado');
+  // a curva é limitada: com o jogador aparecendo de repente atrás dele, num quadro ele vira no máximo turn * dt
+  b.atk = 2; launch(); for (let i = 0; i < 200 && !strikes[0].live; i++) { hold(); frames(1); }
+  const m = strikes[0], before = m.a; p.x = p.tx = m.x - 300; p.y = p.ty = m.y; hold(); update(.05);
+  assert(Math.abs(m.a - before) <= H.turn * .05 + 1e-9, 'não vira de uma vez');
+  // longe demais para alcançar: voa o alcance dele e se apaga, sem dano
+  hp0 = p.hp; p.x = p.tx = 8500; p.y = p.ty = 5500;
+  for (let i = 0; i < 800 && strikes.length; i++) { hold(); update(.05); }
+  assert(!strikes.length && p.hp === hp0, 'se apagou sem alcançar o jogador');
+  // sem escudo, fica furioso: aviso pela metade e o próximo ataque mais cedo; com escudo, volta ao normal
+  p.x = p.tx = 3500; p.y = p.ty = 2000; // de volta ao alcance do chefe
+  b.atk = 0; b.sh = 0; b.lastHit = Infinity; const [r] = launch(); // lastHit: o escudo não começa a voltar no meio da conta
+  assert(Math.abs(r.warn0 - ENEMY_MISSILE.warn * ENEMY_MISSILE.rage.warn) < 1e-9 && b.mcd === ENEMY_MISSILE.rage.cd, 'furioso: aviso curto e rodízio rápido');
+  b.sh = BOSS.sh; b.lastHit = -99; const [n] = launch();
+  assert(n.warn0 === ENEMY_MISSILE.warn && b.mcd === ENEMY_MISSILE.cd, 'com escudo: normal');
+  save.mods.splice(0, save.mods.length, ...mods0);
+  enemies.length = 0; enemies.push(...all); b.hostile = false; b.atk = 0; put(b, home.x, home.y);
+  p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; p.sh = stats().maxSh; strikes.length = 0;
+}
+
 // o bico da nave aponta para o alvo enquanto ela o ataca, mesmo voando para outro lado; sem atacar, aponta para onde vai
 {
   reset();
@@ -493,13 +582,14 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
     p.x = p.tx = e.x + Math.cos(dir) * 350; p.y = p.ty = e.y + Math.sin(dir) * 350; p.hp = 1e9;
     update(.05); far = Math.max(far, Math.hypot(e.x - h.x, e.y - h.y));
   }
-  assert(far > LEASH * .8 && far < LEASH + 80, `foi até ${Math.round(far)} de casa`);
+  const leash = e.t.leash ?? LEASH;
+  assert(far > leash * .8 && far < leash + 80, `foi até ${Math.round(far)} de casa`);
   assert(Math.hypot(e.x - BASE.x, e.y - BASE.y) > 3000, 'não chegou nem perto da base');
   assert.equal(e.hp, e.t.hp, 'desistiu e se recuperou');
   p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; shots.length = 0; // o jogador some: ele volta para casa e fica por lá
   for (let i = 0; i < 2000; i++) update(.05);
   assert(Math.hypot(e.x - h.x, e.y - h.y) < 600, 'voltou para perto de casa');
-  for (const o of enemies) assert(Math.hypot(o.x - o.hx, o.y - o.hy) < LEASH + 80, `${o.t.name} longe de casa`);
+  for (const o of enemies) assert(Math.hypot(o.x - o.hx, o.y - o.hy) < (o.t.leash ?? LEASH) + 80, `${o.t.name} longe de casa`);
 }
 
 // reposição: quem substitui os inimigos destruídos nasce longe do jogador, nunca na área que ele está limpando
