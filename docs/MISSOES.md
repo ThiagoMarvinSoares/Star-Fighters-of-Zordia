@@ -16,10 +16,10 @@ Regra geral: **conteúdo e regras ficam em `src/game/`, tela fica em `src/ui/`.*
 
 ## Como uma missão anda
 
-1. **`offer`:** a conversa de início está esperando. A estação ganha um "!" amarelo e clicar nela (com a nave dentro da base) abre a conversa em vez do hangar.
+1. **`offer`:** a missão está disponível, **e o piloto só pega se quiser.** A estação ganha um "!" amarelo; clicar nela abre o hangar na aba **Missões**, que é a mesma lista do menu de missões (J, `src/ui/journal.ts`): a missão aparece lá com "Aceitar" (só funciona na zona segura). Os dois lugares servem para aceitar e entregar. Aceitar abre a conversa de início. Nada cobra a missão no painel enquanto ela não for aceita.
 2. **`active`:** a conversa terminou, os presentes (`gift`) foram entregues e o objetivo aparece no painel, abaixo do painel do jogador, com a contagem.
-3. **`ready`:** o objetivo foi cumprido. O "!" volta à estação.
-4. **Entrega:** a conversa de entrega (`end`) toca, o piloto entrega o que a missão pede (`take`), recebe a recompensa (`reward`) e, se houver `next`, a conversa de início da próxima missão já vem emendada na mesma conversa.
+3. **`ready`:** o objetivo foi cumprido. O "!" volta à estação, e a missão aparece na aba Missões com "Entregar".
+4. **Entrega:** a conversa de entrega (`end`) toca, o piloto entrega o que a missão pede (`take`) e recebe a recompensa (`reward`). Se houver `next`: uma missão seguinte **de campo** (`report: 'field'`) já começa, com a conversa de início emendada na mesma conversa (a história continua onde o piloto está); uma **de base** fica em `offer`, esperando na aba Missões.
 5. **`done`:** acabou a sequência. Não há "!" nem objetivo.
 
 Com `report: 'field'`, a entrega não espera a base: a conversa abre sozinha, onde o piloto estiver, assim que o objetivo é cumprido. É o que permite uma história andar no meio do espaço.
@@ -184,6 +184,7 @@ Objetos que existem no mapa por causa de uma missão ficam em `scenery()`: cada 
 - **De dentro do jogo.** As falas não citam teclas, cliques, botões, mapa, interface ou "círculo verde". O personagem fala da base, do setor, da estação, do hangar. **O que o jogador precisa apertar vai no `hint`**, que aparece no painel de objetivo.
 - **Curtas.** Uma ou duas frases por fala; o painel tem espaço para umas três linhas.
 - **Cada personagem com a sua voz** (abaixo).
+- **Sem valores de recompensa nas falas.** Ninguém diz quanto o piloto ganhou ("3.000 créditos pelo serviço"): o jogo já mostra o "+X cr" na tela ao entregar. A recompensa fica só em `reward`.
 
 ## Personagens
 

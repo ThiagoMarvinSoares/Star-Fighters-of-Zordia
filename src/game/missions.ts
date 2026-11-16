@@ -120,7 +120,7 @@ export const MISSIONS: Mission[] = [
     end: [
       'Vinte unidades. Deixe-me ver...',
       'Pureza dentro do esperado, nenhum traço de contaminação orgânica. Os Drones ainda não chegaram a esses asteroides. Isso é um dado, e dados me deixam de bom humor.',
-      'As amostras ficam comigo. Pelo serviço, 300 créditos. Não é generosidade: é o preço justo pelo transporte.',
+      'As amostras ficam comigo. O pagamento é pelo transporte, não por generosidade.',
       'O resto do que você extrair, venda no hangar. A partir de agora, as missões passam por mim. Traga resultados e vamos nos entender bem.',
     ],
     take: {purple: 20}, reward: {credits: 300},
@@ -329,7 +329,7 @@ export const MISSIONS: Mission[] = [
     goal: {kill: 'drone', count: 10}, text: 'Destrua 10 Drones', hint: 'Ficam perto da base; qualquer tipo de Drone conta',
     end: [
       'Dez. Os registros mostram o mesmo padrão: eles só reagem quando alguém entra no território deles.',
-      'Ou seja, quem se aproximou fomos nós. Não eles. Ponto anotado. Pelo serviço, 1.200 créditos.',
+      'Ou seja, quem se aproximou fomos nós. Não eles. Ponto anotado.',
     ],
     reward: {credits: 1200},
   },
@@ -345,7 +345,7 @@ export const MISSIONS: Mission[] = [
       'Oito. Analisei os destroços. Nenhum sinal de vida humana a bordo, em nenhum deles.',
       'Mas os sistemas de navegação estavam ativos. As rotas gravadas apontam todas para portais que não funcionam desde o Silêncio das Rotas.',
       ['huedro', 'Então eles estão tentando voltar para algum lugar.'],
-      'Ou estão sendo levados. Ainda não sei. 3.000 créditos pelo serviço.',
+      'Ou estão sendo levados. Ainda não sei.',
     ],
     reward: {credits: 3000},
   },
@@ -360,7 +360,7 @@ export const MISSIONS: Mission[] = [
       'Trinta. Deixe-me ver...',
       'Há um ruído preso no cristal. Uma frequência fraca, repetida, que não vem de nenhum equipamento da Aliança.',
       ['huedro', 'Uma mensagem?'],
-      'Um padrão. Mensagem é uma conclusão, e eu ainda não tenho uma. As amostras ficam comigo. 3.500 créditos.',
+      'Um padrão. Mensagem é uma conclusão, e eu ainda não tenho uma. As amostras ficam comigo.',
     ],
     take: {cyan: 30}, reward: {credits: 3500},
   },
@@ -377,7 +377,7 @@ export const MISSIONS: Mission[] = [
       'Você voltou. Ótimo.',
       ['fabricio', 'Os registros de comando estão intactos. A última ordem recebida tem a data do Silêncio das Rotas: "manter patrulha até novo contato".'],
       ['fabricio', 'O novo contato nunca veio. Eles continuam cumprindo a última ordem.'],
-      'Então é isso que sobrou da frota: gente que foi embora e máquinas que ficaram de guarda. 10.000 créditos, piloto. Você mereceu.',
+      'Então é isso que sobrou da frota: gente que foi embora e máquinas que ficaram de guarda. Bom trabalho, piloto.',
     ],
     reward: {credits: 10000},
   },
@@ -392,7 +392,7 @@ export const MISSIONS: Mission[] = [
       'Cinquenta. A leitura confirma: a Safira de lá vibra na mesma frequência que encontrei na Turquesa. Mais forte.',
       ['huedro', 'A mesma frequência...'],
       'Mais perto da fonte. E a fonte fica no fundo das Rotas Silenciosas, onde nenhum piloto chegou e voltou para contar.',
-      'As amostras ficam comigo. 12.000 créditos.',
+      'As amostras ficam comigo.',
     ],
     take: {blue: 50}, reward: {credits: 12000},
   },
@@ -410,7 +410,7 @@ export const MISSIONS: Mission[] = [
       ['fabricio', 'O chip que ele carregava emite a mesma frequência das amostras. Fraca, constante.'],
       ['huedro', 'Como um sinal.'],
       ['fabricio', 'Como um sinal de retorno. Eu ainda não sei para onde. Nem para quem.'],
-      '20.000 créditos, piloto. E obrigado. Agora as Rotas Silenciosas têm um piloto que foi até o fundo e voltou.',
+      'Obrigado, piloto. Agora as Rotas Silenciosas têm um piloto que foi até o fundo e voltou.',
     ],
     reward: {credits: 20000},
   },
@@ -504,12 +504,14 @@ function talkOf(track: Track): Talk | null {
   const q = slot(track), m = q && byId.get(q.id);
   if (!q || !m || (q.stage !== 'offer' && q.stage !== 'ready')) return null;
   if (q.stage === 'offer') return {track, lines: own(m, m.start), shop: !!m.shop};
-  const next = m.next ? byId.get(m.next) : undefined;
-  const after = next ? own(next, next.start) : []; // a próxima missão, emendada depois da resposta
+  const next = chained(m), after = next ? own(next, next.start) : []; // a próxima missão, emendada depois da resposta
   if (m.ask) return {track, lines: own(m, m.end), shop: false, cue: m.cue,
                      ask: {yes: m.ask.yes, no: m.ask.no, then: [...own(m, m.ask.then), ...after], ...(m.ask.otherwise && {otherwise: [...own(m, m.ask.otherwise), ...after]})}};
-  return {track, lines: [...own(m, m.end), ...(next ? own(next, next.start) : [])], shop: !!next?.shop, cue: m.cue};
+  return {track, lines: [...own(m, m.end), ...after], shop: !!next?.shop, cue: m.cue};
 }
+/** A missão seguinte, se ela emenda na conversa e já começa: só as de campo (report 'field'), que continuam a história
+ *  onde o piloto está. As de base ficam disponíveis no hangar (aba Missões): o piloto aceita se quiser. */
+const chained = (m: Mission) => { const next = m.next ? byId.get(m.next) : undefined; return next?.report === 'field' ? next : undefined; };
 /** A conversa que está esperando na base (a principal primeiro). Na entrega, a conversa de início da próxima missão vem
  *  emendada. null = não há conversa na base. */
 /** a conversa esperando numa sequência (para abrir na hora, ao refazer uma missão) */
@@ -536,7 +538,9 @@ export function talkDone(track: Track = 'main', answer = true): { items: ModKey[
       for (const k of m.reward?.items ?? []) { giveMod(k); got.items.push(k); }
     }
     const next = m.next ? byId.get(m.next) : undefined;
-    if (next) begin(next); else set(track, {...DONE});
+    if (next && next === chained(m)) begin(next);
+    else if (next) set(track, {id: next.id, stage: 'offer', n: 0}); // espera no hangar, até o piloto aceitar
+    else set(track, {...DONE});
   }
   return got;
 }
@@ -548,8 +552,8 @@ export function questGoal(): { goal: string; hint: string; who: string } | null 
     if (!q || !m || q.stage === 'done' || secret(q)) continue;
     const who = NAMES[m.giver];
     if (q.stage !== 'active') {
-      if (q.stage === 'ready' && m.report === 'field') continue; // a conversa abre sozinha
-      return {goal: `Volte à base e fale com ${who}`, hint: 'Clique na estação', who};
+      if (q.stage === 'offer' || m.report === 'field') continue; // oferta: só no hangar, se o piloto quiser; de campo: a conversa abre sozinha
+      return {goal: `Volte à base para entregar: ${m.title}`, hint: 'Hangar, aba Missões', who};
     }
     const g = m.goal, n = Math.floor(q.n), count = 'count' in g ? g.count : 1;
     return {goal: count > 1 ? `${m.text} (${n}/${count})` : m.text, hint: m.hint, who};
@@ -632,12 +636,24 @@ export function journal(): { track: Track; chain: string; items: JournalItem[] }
     for (const m of chainOf(t)) {
       const now = q.stage !== 'done' && m.id === q.id, g = m.goal, count = 'count' in g ? g.count : 1;
       items.push({id: m.id, title: m.title, giver: NAMES[m.giver], status: now ? q.stage : 'done',
-                  goal: !now ? undefined : q.stage === 'offer' ? `Fale com ${NAMES[m.giver]} na base`
-                      : q.stage === 'ready' ? (m.report === 'field' ? 'Concluindo...' : `Volte à base e fale com ${NAMES[m.giver]}`)
+                  goal: !now ? undefined : q.stage === 'offer' ? 'Disponível no hangar, aba Missões'
+                      : q.stage === 'ready' ? (m.report === 'field' ? 'Concluindo...' : 'Entregue no hangar, aba Missões')
                       : count > 1 ? `${m.text} (${Math.floor(q.n)}/${count})` : m.text});
       if (now) break;
     }
     out.push({track: t, chain: CHAINS[t], items});
+  }
+  return out;
+}
+/** Quadro de missões do hangar (aba Missões): o que dá para aceitar (offer) e o que dá para entregar (ready, de base),
+ *  uma por sequência. O piloto escolhe: nada começa sozinho na base. */
+export type BoardItem = { track: Track; title: string; giver: string; chain: string; kind: 'offer' | 'ready'; goal: string; credits: number };
+export function board(): BoardItem[] {
+  const out: BoardItem[] = [];
+  for (const t of TRACKS) {
+    const q = slot(t), m = q && byId.get(q.id);
+    if (!q || !m || !atBaseTalk(q)) continue;
+    out.push({track: t, title: m.title, giver: NAMES[m.giver], chain: CHAINS[t], kind: q.stage === 'offer' ? 'offer' : 'ready', goal: m.text, credits: m.reward?.credits ?? 0});
   }
   return out;
 }

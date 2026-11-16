@@ -42,11 +42,11 @@ export const LEASH = 1300;
 export const CLEAR = 1400;
 
 export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip' | 'repair';
-export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor';
+export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor' | 'northstar';
 export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1' | 'C2' | 'R0' | 'R1' | 'R2' | 'R3';
-export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss' | 'ferrao';
+export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss' | 'ferrao' | 'furia';
 /** Toda nave ou inimigo precisa de um modelo 3D e pontos de tiro com esta chave em models.ts. */
-export type ModelKey = ShipKey | EnemyKey | 'station';
+export type ModelKey = ShipKey | EnemyKey | 'station' | 'unsa';
 
 export interface ShipDef {
   name: string;
@@ -55,6 +55,8 @@ export interface ShipDef {
   r: number; hp: number; speed: number; cost: number;
   /** porão: quanto minério a nave carrega */
   cargo: number;
+  /** ainda não está à venda: cadastrada (modelo e números), mas fora do hangar, da compra e das contas da economia */
+  soon?: boolean;
 }
 export interface ModDef {
   name: string; type: ModType; val: number; cost: number;
@@ -110,7 +112,26 @@ export const SHIPS: Record<ShipKey, ShipDef> = {
   cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1, repair: 1}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
   // tier 4: a vida do Cruiser, bem mais rápida, com um escudo e um míssil a mais que ele
   interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
+  // tier 5: a próxima nave do jogador. Ainda fora da loja (soon); números provisórios, acima da Interceptor.
+  northstar: {name: 'Northstar', slots: {laser: 12, shield: 5, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1}, r: 30, hp: 18000, speed: 290, cost: 120000, cargo: 300, soon: true},
 };
+/** as naves à venda, na ordem da progressão (sem as que ainda não chegaram: ShipDef.soon) */
+export const FLEET = (Object.keys(SHIPS) as ShipKey[]).filter(k => !SHIPS[k].soon);
+// NPCs: naves que existem na história e no cenário, mas não lutam nem se compram; o mapa diz onde cada uma fica
+// (MapDef.npcs). São sólidas: nada voa através delas. O casco é uma cápsula ao longo da proa, com a largura w em fração
+// do comprimento, cobrindo o trecho span do modelo (-1 = popa, 1 = proa; ver solid() em sim.ts). Ficam um pouco abaixo
+// do plano de voo (h, negativo). O modelo mede 3r de comprimento no mundo.
+// Cruzador UNSA: r 520 (uns 1.560 de comprimento, a largura da tela). Guardado: não está em nenhum mapa agora.
+// Fúria, a nave da Poliveira: 1,5x o cruzador (uns 2.300 de comprimento). Também guardada (ver FURIA_PATROL). Só o casco central é sólido:
+// as asas soltas, que flutuam em volta dele, deixam passar.
+export const NPCS = {
+  unsa: {name: 'Cruzador UNSA', model: 'ships/unsa', r: 520, h: -85, w: .2, span: [-1, 1]},
+  furia: {name: 'Fúria', model: 'ships/furia', r: 780, h: -90, w: .26, span: [-.47, .88]},
+} satisfies Record<string, { name: string; model: string; r: number; h: number; w: number; span: [number, number] }>;
+export type NpcKey = keyof typeof NPCS;
+/** A ronda da Fúria em Outer Space, pronta para quando ela entrar no jogo (em MAPS.outer.npcs): aparece no meio do setor
+ *  e dá voltas lentas por ali, longe da base e do portal. Por enquanto nenhum mapa tem NPC. */
+export const FURIA_PATROL = {id: 'furia' as NpcKey, speed: 20, turn: .03, route: [{x: 4800, y: 3000}, {x: 6000, y: 2600}, {x: 6400, y: 3400}, {x: 5200, y: 3600}]};
 export const MODS: Record<ModKey, ModDef> = {
   L1: {name: 'Laser Mk1',  type: 'laser',  val: 25,   cost: 300,  model: 'mp1'},
   L2: {name: 'Laser Mk2',  type: 'laser',  val: 55,   cost: 1500, model: 'mp2'},
@@ -187,6 +208,9 @@ export const DRONE_ELITE: EnemyDef = {key: 'drone', name: 'Drone Elite', hp: 600
 // Ferrão: o lacaio básico da Poliveira. Nave fina e comprida, de casco escuro. Ainda NÃO está no jogo: não entra em
 // nenhum mapa (MAPS) nem em ENEMIES. Os números são provisórios, na faixa do Raider; acerte ao pôr no jogo.
 export const FERRAO: EnemyDef = {key: 'ferrao', name: 'Ferrão', hp: 900, sh: 500, dmg: 50, speed: 230, reward: 600, r: 22, color: '#c86bff', aggro: true};
+// Fúria: a nave da Poliveira. Casco em losango com asas soltas, flutuando em volta. Também ainda NÃO está no jogo;
+// números provisórios, de chefe (acima do Leviatã), para quando ela entrar.
+export const FURIA: EnemyDef = {key: 'furia', name: 'Fúria', hp: 120000, sh: 40000, dmg: 500, speed: 60, reward: 60000, r: 140, color: '#ff4d6d', aggro: true, range: 750, missile: true, attacks: ['line', 'cone', 'homing'], enrage: true};
 export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700, missile: true, attacks: ['line', 'cone', 'homing'], enrage: true};
 
 // ---------- mineração ----------
@@ -250,6 +274,9 @@ export interface MapDef {
   /** guardas: inimigos parados em volta de um ponto fixo. Nascem quando o mapa é povoado e não voltam enquanto a nave
    *  estiver nele; ao sair e voltar, o mapa é repovoado e eles também. */
   guards?: { def: EnemyDef; x: number; y: number }[];
+  /** NPCs do mapa (NPCS): cenário sólido que anda devagar pela rota (route, em volta, sem fim), a speed por segundo,
+   *  virando aos poucos (turn, radianos por segundo). Não atacam nem são atacados. */
+  npcs?: { id: NpcKey; route: { x: number; y: number }[]; speed: number; turn: number }[];
   /** portais: em (x, y) deste mapa; levam ao ponto (tx, ty) do mapa to, que deve ficar longe dos portais de lá */
   portals: { x: number; y: number; to: MapKey; tx: number; ty: number }[];
 }

@@ -2,11 +2,12 @@
 // game/missions.ts; aqui é só a tela. As falas são de dentro do jogo (nada de teclas ou interface): os comandos aparecem só
 // como dica no painel. A conversa de base abre ao clicar na estação (o "!"); a de campo abre sozinha.
 import { MODS } from '../game/data.ts';
-import { persist, p } from '../game/state.ts';
-import { NAMES, needsTalk, talkNow, fieldTalkNow, talkDone, questGoal, questRadio, skipAll, journal, pin, cue, replay, talkFor } from '../game/missions.ts';
+import { persist, p, atBase } from '../game/state.ts';
+import { NAMES, fieldTalkNow, talkDone, questGoal, questRadio, skipAll, journal, pin, cue, talkFor } from '../game/missions.ts';
 import type { Who, Talk, Track } from '../game/missions.ts';
 import { float } from '../game/sim.ts';
 import { toggleShop, shopOpen } from './hangar.ts';
+import { journalHtml, journalClick, trackFolds, missionHooks } from './journal.ts';
 import { radio } from '../view/audio.ts';
 
 // Retrato e função de cada personagem: a foto e o recorte (largura e deslocamento, para o rosto caber no quadro 120x140).
@@ -77,14 +78,8 @@ no.onclick = () => {
 skip.onclick = () => { el.hidden = true; talk = null; clearTimeout(hold); skipAll(); persist(); };
 addEventListener('keydown', ev => { if (talk && ev.code === 'Enter') go.click(); });
 
-/** Clique na estação: se alguém da base tem algo a dizer, abre a conversa e devolve true (o hangar não abre). */
-export function startTalk() {
-  if (talk || !needsTalk()) return !!talk;
-  const t = talkNow();
-  if (!t) return false;
-  open(t);
-  return true;
-}
+// Aceitar, entregar ou refazer uma missão (na lista de missões, no J ou no hangar): abre a conversa dela, e os menus fecham
+missionHooks.open = track => { if (talk) return; const t = talkFor(track); if (t) { toggleBook(false); open(t); } };
 export const talking = () => !!talk;
 
 // ---------- menu de missões (tecla J ou o botão à direita do inventário) ----------
@@ -93,41 +88,21 @@ export const talking = () => !!talk;
 const book = document.createElement('div');
 book.id = 'quests'; book.hidden = true;
 document.body.append(book);
-const STATUS: Record<string, [string, string]> = {done: ['Concluída', 'done'], offer: ['Disponível', 'offer'], active: ['Em andamento', 'active'], ready: ['Pronta para entregar', 'ready']};
-// Cada sequência é um <details>: o título abre e fecha a lista das missões dela (fechadas ficam em folded, enquanto a
-// página estiver aberta). No título, um botão joga a sequência de novo desde a primeira missão.
-const folded = new Set<Track>();
-const DEV = location.hostname === 'localhost';
 function renderBook() {
-  const chains = journal();
-  const open = chains.filter(c => c.items.some(i => i.status !== 'done')), shown = pin.track ?? open[0]?.track;
-  book.innerHTML = `<div class="frame"><header><h2>Missões</h2><button class="x" data-close title="Fechar (J ou Esc)">×</button></header>
-    ${chains.length ? chains.map(c => {
-      // Refazer/Recomeçar: só rodando na própria máquina (testes do autor). Para um jogador, quem refaz ou zera as missões
-      // é o administrador, direto na conta (tools/missoes-piloto.ts).
-      const live = c.items.some(i => i.status !== 'done'), again = !DEV ? '' : `<button class="play" data-play="${c.track}" data-id="${c.items[0].id}" title="${live ? 'Recomeçar a sequência desde a primeira missão' : 'Jogar a sequência de novo'} (a recompensa só é paga uma vez)">${live ? 'Recomeçar' : 'Refazer'}</button>`;
-      return `<details class="${c.track === shown && live ? 'on' : ''}" data-track="${c.track}" ${folded.has(c.track) ? '' : 'open'}>
-        <summary><h3>${c.chain}${live ? `<button data-pin="${c.track}" ${c.track === shown ? 'disabled' : ''}>${c.track === shown ? 'Acompanhando' : 'Acompanhar'}</button>` : '<em>Concluída</em>'}${again}</h3></summary>
-        <ol>${c.items.map(i => `<li class="${STATUS[i.status][1]}"><b>${i.title}</b><small>${i.giver} · ${STATUS[i.status][0]}</small>${i.goal ? `<span>${i.goal}</span>` : ''}</li>`).join('')}</ol>
-      </details>`;
-    }).join('') : '<p>Nenhuma missão ainda. Fale com o Comandante na base.</p>'}</div>`;
+  book.innerHTML = `<div class="frame"><header><h2>Missões</h2><button class="x" data-close title="Fechar (J ou Esc)">×</button></header>${journalHtml()}</div>`;
 }
 let bookKey = '';
-const toggleBook = (on = book.hidden) => { book.hidden = !on; if (on) { bookKey = ''; renderBook(); } };
+const toggleBook = (on = book.hidden) => { if (on && book.hidden) dispatchEvent(new CustomEvent('menu', {detail: 'quests'})); book.hidden = !on; if (on) { bookKey = ''; renderBook(); } };
+addEventListener('menu', ev => { if ((ev as CustomEvent).detail !== 'quests' && !book.hidden) toggleBook(false); }); // um menu por vez
 book.addEventListener('mousedown', ev => ev.preventDefault());
 book.onclick = ev => {
-  const b = (ev.target as Element).closest('button'), d = b?.dataset;
-  if (!d) return;
+  const b = (ev.target as Element).closest('button');
+  if (!b || b.disabled) return;
   ev.preventDefault(); // botão dentro do título: não abre nem fecha a sequência
-  if (d.close !== undefined) toggleBook(false);
-  else if (d.pin) { pin.track = d.pin as Track; renderBook(); }
-  else if (d.play && !talk && DEV) { // refazer: a conversa de início abre na hora, onde o piloto estiver
-    const t = d.play as Track;
-    replay(t, d.id!); pin.track = t; persist(); toggleBook(false);
-    const c = talkFor(t); if (c) open(c);
-  }
+  if (b.dataset.close !== undefined) toggleBook(false);
+  else if (journalClick(b) && !book.hidden) renderBook();
 };
-book.addEventListener('toggle', ev => { const d = ev.target as HTMLDetailsElement; if (d.open) folded.delete(d.dataset.track as Track); else folded.add(d.dataset.track as Track); }, true);
+trackFolds(book);
 addEventListener('keydown', ev => {
   if (ev.target instanceof HTMLInputElement) return;
   if (ev.code === 'KeyJ') toggleBook();
@@ -151,7 +126,7 @@ document.body.append(sub);
 let lastGoal = '', nextRadio = 0, radioOff = 0;
 export function syncMissions() {
   if (!talk) { const f = fieldTalkNow(); if (f) open(f); } // conversa de campo: abre na hora
-  if (!book.hidden) { const k = JSON.stringify(journal()) + pin.track; if (k !== bookKey) { bookKey = k; renderBook(); } } // menu aberto acompanha o progresso
+  if (!book.hidden) { const k = JSON.stringify(journal()) + pin.track + atBase(); if (k !== bookKey) { bookKey = k; renderBook(); } } // menu aberto acompanha o progresso
   const g = talk ? null : questGoal(), key = g ? g.who + g.goal + g.hint : '';
   if (key !== lastGoal) {
     lastGoal = key; goal.hidden = !g;

@@ -1,7 +1,7 @@
 // Ponto de entrada: ajusta o tamanho da tela, carrega o que o mapa precisa (tela de carregamento) e roda o loop
 // entrada -> simulação -> desenho.
 import { view, world, map } from './game/state.ts';
-import { SHIPS, MODS, MODEL_DIR, ORES, MAPS } from './game/data.ts';
+import { MODS, MODEL_DIR, ORES, MAPS, FLEET, NPCS } from './game/data.ts';
 import { keys } from './game/util.ts';
 import { pathOf, preload } from './view/ships3d.ts';
 import { applyInput } from './ui/input.ts';
@@ -64,8 +64,8 @@ let frames = 0, since = 0;
 // que faltar entra quando chegar (até lá aparece o casco genérico).
 const WAIT = 90;
 const all = Object.values(MAPS); // de todos os mapas: passar por um portal não mostra nada aparecendo aos poucos
-const models = [...new Set([pathOf('station'), ...keys(SHIPS).map(k => pathOf(k)), ...all.flatMap(m => m.enemies.map(e => pathOf(e.key))),
-                            ...all.flatMap(m => [...(m.boss ? [pathOf(m.boss.def.key)] : []), ...(m.guards ?? []).map(g => pathOf(g.def.key)), ...m.ores.map(o => 'asteroids/' + ORES[o].model)]),
+const models = [...new Set([pathOf('station'), ...FLEET.map(k => pathOf(k)), ...all.flatMap(m => m.enemies.map(e => pathOf(e.key))),
+                            ...all.flatMap(m => [...(m.npcs ?? []).map(n => NPCS[n.id].model), ...(m.boss ? [pathOf(m.boss.def.key)] : []), ...(m.guards ?? []).map(g => pathOf(g.def.key)), ...m.ores.map(o => 'asteroids/' + ORES[o].model)]),
                             ...keys(MODS).flatMap(k => MODS[k].model ? [`${MODEL_DIR[MODS[k].type]}/${MODS[k].model}`] : []), PET_MODEL])];
 const screen = document.getElementById('loading'), total = models.length + IMAGES + 1; // + 1 = os sons, contados juntos
 let done = 0;

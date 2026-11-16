@@ -3,7 +3,7 @@
 // desligados. Abas: Equipamento: a nave à esquerda, as casas de equipamento por tipo no
 // meio e o inventário (itens guardados) à direita. Naves: escolher e comprar naves. Loja: comprar módulos, por categoria.
 // As regras de compra, venda e equipar ficam em state.ts; aqui é só a tela.
-import { SHIPS, MODS, ORES, ORE_STACK, LABEL, SLOT, SLOT_ONE, MODEL_DIR, ACCURACY } from '../game/data.ts';
+import { SHIPS, FLEET, MODS, ORES, ORE_STACK, LABEL, SLOT, SLOT_ONE, MODEL_DIR, ACCURACY } from '../game/data.ts';
 import type { ModDef, ModKey, ModType, OreKey, ShipDef, ShipKey } from '../game/data.ts';
 import { save, stats, count, freeSlot, buyMod, sellMod, equip, unequip, buyShip, useShip, cargoUsed, cargoValue, sellOre, sellCargo, atBase } from '../game/state.ts';
 import { keys } from '../game/util.ts';
@@ -11,6 +11,8 @@ import { TILT } from '../view/camera.ts';
 import { createStage, iconOf, onModelLoaded } from '../view/ships3d.ts';
 import { ui } from '../view/audio.ts';
 import { accountHtml, accountAction } from './account.ts';
+import { board, journal } from '../game/missions.ts';
+import { journalHtml, journalClick, trackFolds } from './journal.ts';
 
 const el = document.getElementById('shop')!;
 const slotText = (f: (t: ModType) => number) => keys(SLOT).map(t => `${f(t)} ${f(t) === 1 ? SLOT_ONE[t] : SLOT[t]}`).join(' · ');
@@ -46,12 +48,12 @@ const pic = (k: ModKey) => { const m = MODS[k], u = m.model && iconOf(`${MODEL_D
 
 // teto das barras: o máximo que qualquer nave alcança com os melhores módulos
 const best = (t: ModType) => Math.max(...keys(MODS).filter(k => MODS[k].type === t).map(k => MODS[k].val));
-const top = (f: (s: ShipDef) => number) => Math.max(...keys(SHIPS).map(k => f(SHIPS[k])));
+const top = (f: (s: ShipDef) => number) => Math.max(...FLEET.map(k => f(SHIPS[k])));
 const pct = (acc: number) => Math.round(acc * 100);
 const CAP = {hp: top(s => s.hp), sh: top(s => s.slots.shield * best('shield')),
              dmg: top(s => s.slots.laser * best('laser')), speed: top(s => s.speed + s.slots.engine * best('engine')), cargo: top(s => s.cargo)};
 
-type Tab = 'gear' | 'ships' | 'store';
+type Tab = 'gear' | 'ships' | 'store' | 'missions';
 let tab: Tab = 'gear';
 let shown: ShipKey = save.ship;            // aba Naves: nave escolhida (a prévia grande mostra ela)
 let cat: ModType = 'laser', pick: ModKey = 'L1'; // aba Loja: categoria aberta e item escolhido
@@ -153,7 +155,7 @@ const gearTab = () => `<div class="gear">${shipPane(save.ship)}<div class="mid">
 // mesmo desenho da aba Equipamento: a nave escolhida grande à esquerda; à direita a lista de naves, com comprar
 // (as que faltam) ou usar (as que já estão no hangar)
 function shipsTab() {
-  const rows = keys(SHIPS).map(k => `<button class="srow${k === shown ? ' on' : ''}" data-ship-pick="${k}"><img class="shp" src="${iconOf(`ships/${k}`, true)}" alt="">
+  const rows = FLEET.map(k => `<button class="srow${k === shown ? ' on' : ''}" data-ship-pick="${k}"><img class="shp" src="${iconOf(`ships/${k}`, true)}" alt="">
     <span><b>${SHIPS[k].name}</b><small>${slotText(t => SHIPS[k].slots[t])}</small></span>
     ${k === save.ship ? '<span class="badge">Em uso</span>' : save.owned.includes(k) ? '<span class="badge has">No hangar</span>' : `<span class="pr">${cr(SHIPS[k].cost)}</span>`}</button>`).join('');
   const s = SHIPS[shown], note = `${s.name} · atributos de fábrica, sem módulos.<br>Ao trocar de nave, os módulos da nave em uso vão para o inventário.`;
@@ -184,7 +186,9 @@ function storeTab() {
       <button class="buy" data-buy="${pick}" ${off(away() || (save.credits < m.cost ? 'Créditos insuficientes' : ''))}>Comprar</button>
       <small class="note">${freeSlot(m.type) ? 'Há slot livre: vai direto para a nave.' : 'Slots deste tipo cheios: vai para o inventário.'}</small></div></div>`;
 }
-const TABS: Record<Tab, [name: string, body: () => string]> = {gear: ['Equipamento', gearTab], ships: ['Naves', shipsTab], store: ['Loja', storeTab]};
+// Aba Missões: a mesma lista do menu de missões (J), com Aceitar/Entregar nas que dá para pegar ou entregar aqui.
+const missionsTab = journalHtml;
+const TABS: Record<Tab, [name: string, body: () => string]> = {gear: ['Equipamento', gearTab], ships: ['Naves', shipsTab], store: ['Loja', storeTab], missions: ['Missões', missionsTab]};
 
 // prévia 3D girando sobre um anel brilhante: a nave em uso ou, na aba Naves, a nave escolhida
 let ang = .7, raf = 0, stage: ReturnType<typeof createStage> | undefined; // palco 3D só da prévia, criado ao abrir
@@ -210,7 +214,7 @@ function drawPreview() {
 // entrando no porão, créditos de um abate, a nave entrando ou saindo da base), a tela é refeita. Não durante um
 // clique: trocar o botão entre apertar e soltar faria o clique se perder.
 let sig = '', pressed = false;
-const signature = () => `${save.credits}|${save.ship}|${save.mods}|${save.inv}|${keys(ORES).map(k => Math.floor(save.cargo[k]))}|${atBase()}`;
+const signature = () => `${save.credits}|${save.ship}|${save.mods}|${save.inv}|${keys(ORES).map(k => Math.floor(save.cargo[k]))}|${atBase()}|${tab === 'missions' ? JSON.stringify(journal()) : board().length}`;
 el.addEventListener('pointerdown', () => { pressed = true; });
 addEventListener('pointerup', () => { pressed = false; });
 function spin(ts: number) {
@@ -228,7 +232,7 @@ export function renderShop() {
   const y = el.querySelector('main')?.scrollTop ?? 0, iy = el.querySelector('.inv')?.scrollTop ?? 0; // re-renderizar não volta a rolagem ao topo
   el.innerHTML = `<div class="frame"><header class="hd">${svg(I.hangar)}<h2>HANGAR</h2>
     ${accountHtml()}<span class="cr">${svg(I.coin)}${cr(save.credits)}</span><button class="x" data-close title="Fechar (B ou Esc)">${svg(I.close)}</button></header>
-    <nav class="tabs">${keys(TABS).map(k => `<button data-tab="${k}"${k === tab ? ' class="on"' : ''}>${TABS[k][0]}</button>`).join('')}</nav>
+    <nav class="tabs">${keys(TABS).map(k => `<button data-tab="${k}"${k === tab ? ' class="on"' : ''}>${TABS[k][0]}${k === 'missions' && board().length ? `<i class="badge">${board().length}</i>` : ''}</button>`).join('')}</nav>
     ${atBase() ? '' : '<div class="away">Fora da base: só consulta. Comprar, vender, equipar e trocar de nave só na zona segura.</div>'}
     <main>${TABS[tab][1]()}</main></div>`;
   el.querySelector('main')!.scrollTop = y;
@@ -258,6 +262,7 @@ el.onclick = ev => {
   if (!b || b.disabled || !d) return;
   if (d.close !== undefined) return toggleShop(false);
   if (d.account) return void accountAction(d.account);
+  if (journalClick(b)) return void (shopOpen() && renderShop()); // a lista de missões (aba Missões)
   if (d.tab) tab = d.tab as Tab;
   else if (d.from) { // casa do Equipamento: um clique seleciona; duplo clique equipa ou desequipa
     const from = d.from as From, i = +d.i!;
@@ -281,9 +286,14 @@ el.onclick = ev => {
 };
 
 export const shopOpen = () => el.style.display === 'block';
+trackFolds(el);
 onModelLoaded(() => { if (shopOpen()) renderShop(); }); // um ícone ficou pronto: mostra sem precisar reabrir
 // a nave da prévia só gira enquanto o hangar está aberto
-export const toggleShop = (on: boolean) => {
+// Um menu por vez: quem abre avisa ('menu', com o nome dele) e os outros fecham.
+addEventListener('menu', ev => { if ((ev as CustomEvent).detail !== 'shop' && shopOpen()) toggleShop(false); });
+export const toggleShop = (on: boolean, at?: Tab) => {
+  if (at) tab = at;
+  if (on && !shopOpen()) dispatchEvent(new CustomEvent('menu', {detail: 'shop'}));
   el.style.display = on ? 'block' : 'none';
   cancelAnimationFrame(raf); raf = 0;
   if (on) { sel = null; oreSel = null; shown = save.ship; renderShop(); raf = requestAnimationFrame(spin); }

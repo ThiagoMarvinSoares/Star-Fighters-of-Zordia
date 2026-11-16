@@ -98,6 +98,7 @@ canvas{display:block;cursor:crosshair}
 /* minério: dois botões com valor no texto não cabem lado a lado; ficam um embaixo do outro, na largura toda */
 #shop .det.ore .btns{flex-direction:column}
 #shop .ic{width:48px;height:48px;box-sizing:border-box;display:grid;place-items:center;border:1px solid;border-radius:4px;color:var(--k);background:#ffffff08}
+#shop .tabs .badge{display:inline-block;min-width:16px;margin-left:6px;padding:0 4px;border-radius:8px;background:#ffd45a;color:#000;font-style:normal;font-size:10px;line-height:16px;text-align:center}
 #shop .buy{padding:5px 10px;border:1px solid var(--c);background:linear-gradient(#1c8fc0,#0e5a86);color:#fff;font-weight:600}
 #shop .buy:hover:enabled{box-shadow:0 0 10px #3cdcff99}
 #shop .sell{padding:5px 8px;border:1px solid #ff8a5a80;color:#ffb08a;font-size:12px}
@@ -169,31 +170,35 @@ canvas{display:block;cursor:crosshair}
 #quests header{display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid #3cdcff4d;background:linear-gradient(90deg,#3cdcff1f,transparent 60%)}
 #quests h2{flex:1;margin:0;font-size:16px;letter-spacing:.12em;text-transform:uppercase;color:#fff}
 #quests .x{border:0;background:none;color:#7f97b0;font-size:22px;line-height:1;cursor:pointer}
-#quests details{margin:10px 12px;border:1px solid #3cdcff33;background:#0a1730b3}
-#quests details.on{border-color:#ffd45a88}
-#quests summary{list-style:none;cursor:pointer}
-#quests summary::-webkit-details-marker{display:none}
-#quests summary h3::before{content:'▸';color:#3cdcff;transition:transform .15s}
-#quests details[open] summary h3::before{transform:rotate(90deg)}
-#quests details:not([open]) h3{border-bottom:0}
-#quests h3{display:flex;align-items:center;gap:10px;margin:0;padding:8px 12px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#fff;border-bottom:1px solid #3cdcff22}
-#quests h3 button{margin-left:auto;padding:3px 10px;border:1px solid #ffd45a;background:none;color:#ffd45a;font:11px system-ui,sans-serif;letter-spacing:0;text-transform:none;cursor:pointer}
-#quests h3 button:disabled{opacity:.7;cursor:default;border-style:dashed}
-#quests h3 em{margin-left:auto;font-style:normal;font-weight:400;letter-spacing:0;text-transform:none;color:#5dff7a}
-#quests ol{list-style:none;margin:0;padding:6px 12px 10px}
-#quests li{position:relative;padding:6px 0 6px 18px;border-bottom:1px solid #ffffff0d}
-#quests li:last-child{border-bottom:0}
-#quests li::before{content:'';position:absolute;left:2px;top:11px;width:8px;height:8px;border-radius:50%;background:#7f97b0}
-#quests li.done{opacity:.6}
-#quests li.done::before{background:#5dff7a}
-#quests li.active::before{background:#3cdcff;box-shadow:0 0 6px #3cdcff}
-#quests li.offer::before,#quests li.ready::before{background:#ffd45a;box-shadow:0 0 6px #ffd45a}
-#quests li b{display:block;color:#fff}
-#quests li small{display:block;color:#7f97b0;font-size:11px}
-#quests li span{display:block;margin-top:2px;color:#ffd45a}
-#quests h3 .play{margin-left:0;border-color:#3cdcff88;color:#3cdcff}
-#quests h3 .play:hover{border-color:#3cdcff;background:#3cdcff1a}
-#quests p{margin:14px;color:#7f97b0}
+.jr details{margin:10px 12px;border:1px solid #3cdcff33;background:#0a1730b3}
+.jr details.on{border-color:#ffd45a88}
+.jr summary{list-style:none;cursor:pointer}
+.jr summary::-webkit-details-marker{display:none}
+.jr summary h3::before{content:'▸';color:#3cdcff;transition:transform .15s}
+.jr details[open] summary h3::before{transform:rotate(90deg)}
+.jr details:not([open]) h3{border-bottom:0}
+.jr h3{display:flex;align-items:center;gap:10px;margin:0;padding:8px 12px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#fff;border-bottom:1px solid #3cdcff22}
+.jr h3 button{margin-left:auto;padding:3px 10px;border:1px solid #ffd45a;background:none;color:#ffd45a;font:11px system-ui,sans-serif;letter-spacing:0;text-transform:none;cursor:pointer}
+.jr h3 button:disabled{opacity:.7;cursor:default;border-style:dashed}
+.jr h3 em{margin-left:auto;font-style:normal;font-weight:400;letter-spacing:0;text-transform:none;color:#5dff7a}
+.jr ol{list-style:none;margin:0;padding:6px 12px 10px}
+.jr li{position:relative;padding:6px 0 6px 18px;border-bottom:1px solid #ffffff0d}
+.jr li:last-child{border-bottom:0}
+.jr li::before{content:'';position:absolute;left:2px;top:11px;width:8px;height:8px;border-radius:50%;background:#7f97b0}
+.jr li.done{opacity:.6}
+.jr li.done::before{background:#5dff7a}
+.jr li.active::before{background:#3cdcff;box-shadow:0 0 6px #3cdcff}
+.jr li.offer::before,.jr li.ready::before{background:#ffd45a;box-shadow:0 0 6px #ffd45a}
+.jr li b{display:block;color:#fff}
+.jr li small{display:block;color:#7f97b0;font-size:11px}
+.jr li span{display:block;margin-top:2px;color:#ffd45a}
+.jr h3 .play{margin-left:0;border-color:#3cdcff88;color:#3cdcff}
+.jr h3 .play:hover{border-color:#3cdcff;background:#3cdcff1a}
+.jr p{margin:14px;color:#7f97b0}
+.jr li .take{position:absolute;right:0;top:50%;transform:translateY(-50%);padding:4px 12px;border:1px solid #ffd45a;background:linear-gradient(#5a4a10,#3a2f08);color:#ffd45a;font:600 11px system-ui,sans-serif;cursor:pointer}
+.jr li .take:disabled{opacity:.5;cursor:default}
+.jr li:has(.take){padding-right:96px}
+#shop .jr{max-width:640px;margin:0 auto}
 #hotbar{position:fixed;left:50%;bottom:calc(26px * var(--ui,1));transform:translateX(-50%) scale(var(--ui,1));transform-origin:bottom center;display:flex;gap:6px}
 #hotbar button{position:relative;width:46px;height:46px;padding:0;display:grid;place-items:center;background:#0b1220cc;border:1px solid #2a4a6a;border-radius:6px;cursor:pointer}
 #hotbar button:disabled{opacity:.45;cursor:default}

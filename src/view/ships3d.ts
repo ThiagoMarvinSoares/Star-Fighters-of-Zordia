@@ -60,8 +60,9 @@ export function adopt(scene: THREE.Object3D, kind: ModelKind, sunk = false) {
     if (g.hasAttribute('color') && !m.map) n.material = /glow|light|illuminated|reticle|emitter|energy|beacon|window|track/i.test(n.name) ? GLOW : LIT;
     else {
       let t = matte.get(m);
-      if (!t && (m.normalMap || m.roughnessMap || m.metalnessMap)) {
-        // acabamento completo: o arquivo veio com relevo ou metal (tools/slim-glb.py --pbr, naves do jogador); o material
+      if (!t && (m.normalMap || m.roughnessMap || m.metalnessMap || m.userData.full)) {
+        // acabamento completo: o arquivo veio com relevo ou metal (tools/slim-glb.py --pbr, naves do jogador), ou o
+        // material pede (extras.full no .glb: a Fúria, de metal polido sem mapa nenhum); o material
         // do arquivo fica como está, só com o brilho próprio limitado. O reflexo vem do ambiente da cena (ver lit).
         m.emissiveIntensity = Math.min(m.emissiveIntensity, 2);
         matte.set(m, t = m);

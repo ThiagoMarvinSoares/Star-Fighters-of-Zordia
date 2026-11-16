@@ -1,6 +1,6 @@
 // Estado do jogo: o que muda durante a partida. A simulação escreve aqui, o desenho só lê.
 import { START, SHIPS, MODS, ORES, ACCURACY, MAPS, HOME } from './data.ts';
-import type { EnemyDef, MapDef, MapKey, ModKey, ModType, OreKey, ShipKey } from './data.ts';
+import type { EnemyDef, MapDef, MapKey, ModKey, ModType, OreKey, ShipKey, NpcKey } from './data.ts';
 import type { Vec3 } from './models.ts';
 
 /** offer = a conversa de início está esperando na base; active = cumprindo o objetivo; ready = objetivo cumprido, falta
@@ -107,6 +107,8 @@ export interface Strike { src: Enemy; a: number; len: number; warn: number; /** 
 export interface Drop { x: number; y: number; item: ModKey }
 /** asteroide: parado no mapa, some quando o minério (left) acaba */
 export interface Rock { ore: OreKey; x: number; y: number; a: number; r: number; left: number }
+/** um NPC no mapa atual (MapDef.npcs): onde está, para onde aponta e a próxima parada da rota */
+export interface Npc { id: NpcKey; x: number; y: number; a: number; next: number }
 export interface Shot {
   src: Player | Enemy; tgt: Player | Enemy;
   /** raio da nave que atirou e ponto de fixação de onde sai */
@@ -218,7 +220,7 @@ export const map = (): MapDef => MAPS[world.map];
 const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
                           target: null, firing: false, auto: false, multi: false, extra: [], launch: null, fix: false, fixAt: -99, fixing: false, mis: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
-export const rocks: Rock[] = [], drops: Drop[] = [], strikes: Strike[] = [];
+export const rocks: Rock[] = [], drops: Drop[] = [], strikes: Strike[] = [], npcs: Npc[] = [];
 /** Troca o progresso atual pelo que veio de fora (o da conta, ao entrar) e conserta a nave para ele; false se não serve.
  *  Grava no navegador, mas não avisa onPersist: o servidor acabou de mandar esse mesmo progresso. */
 export function adopt(raw: unknown) {
@@ -279,7 +281,7 @@ export function useShip(k: ShipKey) {
 }
 /** compra uma nave que o jogador ainda não tem e já passa a usá-la (as outras continuam no hangar) */
 export function buyShip(k: ShipKey) {
-  if (!atBase() || save.owned.includes(k) || save.credits < SHIPS[k].cost) return false;
+  if (!atBase() || SHIPS[k].soon || save.owned.includes(k) || save.credits < SHIPS[k].cost) return false;
   save.credits -= SHIPS[k].cost; save.owned.push(k);
   return useShip(k);
 }

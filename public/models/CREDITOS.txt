@@ -13,12 +13,36 @@ pets/drone.glb
   Alterações: removidos os dados que o jogo não usa (tools/slim-glb.py) e geometria comprimida (tools/compress-glb.mjs).
   No jogo, é o drone do robô de reparo.
 
+ships/furia.glb
+  "The Fury of a Death Up Rising", de Inditrion Dradnon (https://sketchfab.com/dradnon)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/the-fury-of-a-death-up-rising-853d1cb480eb442697b04f6f0e370312
+  Alterações: malha reduzida de 620 mil para 79 mil triângulos e as 302 peças juntadas por material
+  (tools/slim-glb.py --grid 200 --flip, que também vira a nave de frente para +Z; tools/compress-glb.mjs --merge).
+  No jogo, é a Fúria, a nave da Poliveira.
+
 ships/ferrao.glb
   "Space Ship", de Comrade1280 (https://sketchfab.com/comrade1280)
   Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
   Fonte: https://sketchfab.com/3d-models/space-ship-63ce372c1aa843e98bf1548109e055d8
   Alterações: removidos os dados que o jogo não usa (tools/slim-glb.py), casco nivelado (vinha inclinado ~11° de
   nariz para baixo) e geometria comprimida (tools/compress-glb.mjs). No jogo, é o Ferrão, lacaio da Poliveira.
+
+ships/northstar.glb
+  "Northstar fighter ship", de Mark Bai (https://sketchfab.com/bcfbox)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/northstar-fighter-ship-a45170bb77fc4c568b7d94050ecbf54c
+  Alterações: texturas reduzidas para 1024 px (JPEG, ou PNG onde há transparência), modelo girado 90° para a frente
+  apontar para +Z, dados que o jogo não usa removidos (tools/slim-glb.py --pbr) e geometria comprimida
+  (tools/compress-glb.mjs). No jogo, é a Northstar, a próxima nave do jogador.
+
+ships/unsa.glb
+  "UNSA cruiser / spaceship", de xaxary (https://sketchfab.com/Xaxary)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/unsa-cruiser-spaceship-8c77a6333444432588b167a660092cec
+  Alterações: malha reduzida de 110 mil para 45 mil triângulos, texturas reduzidas para 1024 px (mantidos o relevo e o
+  metal: tools/slim-glb.py --pbr --grid 300) e geometria comprimida (tools/compress-glb.mjs --merge). No jogo, é o
+  Cruzador UNSA, um NPC.
 
 ships/scout.glb
   "LIGHT FIGHTER SPACESHIP - FREE -", de Kerem Kavalci (https://sketchfab.com/Keremz)

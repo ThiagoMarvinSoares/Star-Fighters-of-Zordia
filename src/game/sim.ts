@@ -1,8 +1,8 @@
 // Simulação: as regras do jogo. Só altera o estado; não sabe nada de canvas, tela nem teclado.
-import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ENEMY_MISSILE, PORTAL_R, PICKUP_R, BOSS_DROP, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
+import { NPCS, RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ENEMY_MISSILE, PORTAL_R, PICKUP_R, BOSS_DROP, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
 import type { EnemyDef, MapDef, MapKey } from './data.ts';
 import type { ModelKey, ModKey } from './data.ts';
-import { save, persist, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, world, map } from './state.ts';
+import { save, persist, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, world, map, npcs } from './state.ts';
 import type { Body, Enemy, Player, Rock } from './state.ts';
 import { clamp, dist, rnd, rand } from './util.ts';
 import type { Point } from './util.ts';
@@ -17,12 +17,35 @@ let seeded = false; // o mapa atual já recebeu a população inicial
 /** guardas de um ponto fixo (MapDef.guards): ficam fora da cota do tipo deles e não são repostos */
 export const guards = new WeakSet<Enemy>();
 
+/** Casco sólido dos NPCs do mapa (MapDef.npcs): uma cápsula, o segmento a-b ao longo da proa com raio rad. */
+function hulls() {
+  return npcs.map(n => {
+    const d = NPCS[n.id], half = d.r * SCALE, rad = d.w * half, c = Math.cos(n.a), s = Math.sin(n.a);
+    const from = d.span[0] * half + rad, to = Math.max(from, d.span[1] * half - rad); // o trecho sólido, sem as pontas arredondadas
+    return {ax: n.x + c * from, ay: n.y + s * from, bx: n.x + c * to, by: n.y + s * to, rad};
+  });
+}
+/** Se o corpo o (raio pad) está dentro de um casco sólido, empurra para fora, para o ponto mais próximo da borda.
+ *  Devolve true se estava dentro. Com push = false, só confere. */
+export function solid(o: Point, pad: number, push = true) {
+  let hit = false;
+  for (const h of hulls()) {
+    const dx = h.bx - h.ax, dy = h.by - h.ay, t = clamp(((o.x - h.ax) * dx + (o.y - h.ay) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+    const cx = h.ax + dx * t, cy = h.ay + dy * t, ex = o.x - cx, ey = o.y - cy, d = Math.hypot(ex, ey), need = h.rad + pad;
+    if (d >= need) continue;
+    hit = true;
+    if (!push) continue;
+    const k = d > 1e-6 ? need / d : 0; // bem no eixo: sai pela lateral
+    if (k) { o.x = cx + ex * k; o.y = cy + ey * k; } else { o.x = cx - dy / Math.hypot(dx, dy) * need; o.y = cy + dx / Math.hypot(dx, dy) * need; }
+  }
+  return hit;
+}
 /** raio em volta da base do mapa atual onde inimigos não entram (0 se o mapa não tem base) */
 export const keepOut = () => { const b = map().base; return b ? b.r + KEEP_MARGIN : 0; };
 /** Troca de mapa: a nave aparece em (x, y) de to. O mapa que ficou para trás é descartado (ao voltar, é repovoado). */
 export function travel(to: MapKey, x: number, y: number) {
   world.map = to; seeded = false;
-  enemies.length = rocks.length = drops.length = strikes.length = shots.length = parts.length = texts.length = 0; // espólio deixado para trás se perde
+  enemies.length = rocks.length = drops.length = strikes.length = shots.length = parts.length = texts.length = npcs.length = 0; // espólio deixado para trás se perde
   Object.assign(p, {x, y, tx: x, ty: y, target: null, mining: null, beam: false});
 }
 
@@ -111,7 +134,7 @@ function place(pick: () => Point, ok: (q: Point) => boolean, far: number): Point
 function rock0(away: boolean): Rock {
   const m = map(), o = m.base ?? m.spawn, gap = m.base ? m.base.r + 150 : 0;
   const {x, y} = place(() => ({x: rnd(100, m.w - 100), y: rnd(100, m.h - 100)}),
-                       q => dist(q, o) >= gap && !m.portals.some(g => dist(q, g) < PORTAL_R + 150), away ? CLEAR : 250);
+                       q => dist(q, o) >= gap && !m.portals.some(g => dist(q, g) < PORTAL_R + 150) && !solid(q, 150, false), away ? CLEAR : 250);
   const far = clamp((dist({x, y}, o) / Math.hypot(m.w, m.h) - .1) / .6, 0, 1);
   const ore = m.ores[clamp(Math.round(far * (m.ores.length - 1) + rnd(-.6, .4)), 0, m.ores.length - 1)];
   return {ore, x, y, a: rnd(0, 6.28), r: rnd(28, 44), left: Math.round(rnd(ROCK_ORE[0], ROCK_ORE[1]))};
@@ -144,7 +167,7 @@ function band(m: MapDef, i: number): [number, number] {
 function spawn(i: number, away: boolean): Enemy {
   const m = map(), o = m.base ?? m.spawn, [r0, r1] = band(m, i);
   const {x, y} = place(() => { const r = rnd(r0, r1), a = rnd(0, 6.2832); return {x: o.x + Math.cos(a) * r, y: o.y + Math.sin(a) * r}; },
-                       q => q.x >= 0 && q.x <= m.w && q.y >= 0 && q.y <= m.h, away ? CLEAR : 600);
+                       q => q.x >= 0 && q.x <= m.w && q.y >= 0 && q.y <= m.h && !solid(q, 150, false), away ? CLEAR : 600);
   return born(m.enemies[i], x, y);
 }
 
@@ -161,6 +184,17 @@ export function update(dt: number) {
   const st = stats();
   const moved = step(p, p.tx, p.ty, st.speed * dt); // vira a nave para onde ela vai; se estiver atacando, a mira corrige abaixo
   const m = map(), base = m.base, boss = m.boss;
+  // NPCs: andam devagar pela rota, sem fim, virando aos poucos para a próxima parada (MapDef.npcs)
+  npcs.forEach((n, i) => {
+    const d = m.npcs?.[i], to = d?.route[n.next];
+    if (!d || !to) return;
+    const want = Math.atan2(to.y - n.y, to.x - n.x), turn = Math.atan2(Math.sin(want - n.a), Math.cos(want - n.a));
+    n.a += clamp(turn, -d.turn * dt, d.turn * dt);
+    n.x += Math.cos(n.a) * d.speed * dt; n.y += Math.sin(n.a) * d.speed * dt;
+    if (Math.hypot(to.x - n.x, to.y - n.y) < 400) n.next = (n.next + 1) % d.route.length;
+  });
+  solid(p, st.r * SCALE); // não atravessa os NPCs: escorrega pela borda do casco (e é empurrada quando um passa)
+  if (npcs.length) for (const k of rocks) solid(k, k.r * SCALE); // os asteroides no caminho são empurrados para o lado
   p.x = clamp(p.x, 0, m.w); p.y = clamp(p.y, 0, m.h);
   // portal: encostou, mudou de mapa; o resto do quadro não vale mais (o mapa novo é povoado no próximo)
   for (const g of m.portals) if (dist(p, g) < PORTAL_R) { travel(g.to, g.tx, g.ty); return; }
@@ -275,6 +309,7 @@ export function update(dt: number) {
 
   // ---------- IA dos inimigos ----------
   for (const e of enemies) {
+    solid(e, e.t.r * SCALE); // nem os inimigos atravessam os NPCs
     const ed = dist(e, p);
     // perdeu o jogador de vista, ou foi longe demais de casa: desiste. Longe de casa ele ainda volta (back) sem dar
     // atenção ao jogador, até estar de novo bem dentro do território dele.
@@ -408,6 +443,9 @@ export function update(dt: number) {
   const cur = map(), cb = cur.boss; // de novo: a morte pode ter levado a nave de volta ao mapa inicial
   let alive = !!cb && enemies.some(e => e.t === cb.def);
   if (cb && !alive && now >= (bossAt[world.map] ?? 0)) { enemies.push(born(cb.def, cb.x, cb.y)); alive = true; }
+  if (!seeded) for (const d of cur.npcs ?? []) { // NPCs: começam na primeira parada, apontando para a segunda
+    const [a, b] = d.route; npcs.push({id: d.id, x: a.x, y: a.y, a: Math.atan2(b.y - a.y, b.x - a.x), next: 1});
+  }
   if (!seeded) for (const g of cur.guards ?? []) { const e = born(g.def, g.x, g.y); guards.add(e); enemies.push(e); } // guardas: só ao povoar o mapa
   quotas(cur).forEach((want, i) => { // os comuns: cada tipo completa a cota dele, na faixa dele (os guardas não contam)
     for (let have = enemies.filter(e => e.t === cur.enemies[i] && !guards.has(e)).length; have < want; have++) enemies.push(spawn(i, seeded));

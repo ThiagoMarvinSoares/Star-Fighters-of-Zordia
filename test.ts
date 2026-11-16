@@ -1,12 +1,12 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME, DRONE_ELITE, FERRAO } from './src/game/data.ts';
+import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME, DRONE_ELITE, FERRAO, FURIA, FLEET, NPCS, FURIA_PATROL } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
-import { parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
+import { npcs, parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
 import { HARD, ENGINES, mount } from './src/game/models.ts';
-import { update, hit, explode, keepOut, travel, resume, guards } from './src/game/sim.ts';
-import { journal, pin, MISSIONS, PLACES, mission, needsTalk, questNow, questGoal, questTarget, questRadio, progress, talkNow, talkDone, arrive, fieldTalk, fieldTalkNow, scenery, cue, replay, talkFor, questPlace } from './src/game/missions.ts';
+import { update, hit, explode, keepOut, travel, resume, guards, solid } from './src/game/sim.ts';
+import { journal, pin, MISSIONS, PLACES, mission, needsTalk, questNow, questGoal, questTarget, questRadio, progress, talkNow, talkDone, arrive, fieldTalk, fieldTalkNow, scenery, cue, replay, talkFor, questPlace, board } from './src/game/missions.ts';
 import { keys, seed } from './src/game/util.ts';
 import * as THREE from 'three';
 import { TILT, COSV, minimap, toWorld, onScreen } from './src/view/camera.ts';
@@ -91,7 +91,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
 // caro, como o Míssil Mk4, enquanto há melhoria mais barata disponível.)
 {
   type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[]; chip: ModKey[]; repair: ModKey[] };
-  const ships = keys(SHIPS), sum = (l: ModKey[]) => l.reduce((a, m) => a + MODS[m].val, 0);
+  const ships = FLEET, sum = (l: ModKey[]) => l.reduce((a, m) => a + MODS[m].val, 0);
   const income = (k: Kit) => { // créditos por minuto
     const dps = (sum(k.laser) + sum(k.missile) / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
     return Math.max(0, ...ENEMIES.map(e => {
@@ -245,7 +245,8 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert.equal(rocks.length, M.asteroids);
   for (const k of rocks) assert(Math.hypot(k.x - BASE.x, k.y - BASE.y) >= BASE.r + 150 && k.left > 0 && Object.hasOwn(ORES, k.ore), 'asteroide mal colocado');
   for (const k of keys(ORES)) save.cargo[k] = 0;
-  const k = rocks[0]; k.left = 10; k.ore = 'purple'; p.target = null; p.firing = false; // Ametista: qualquer minerador, dureza 1
+  const free = () => rocks.find(o => !solid({x: o.x, y: o.y}, 700, false))!; // longe do casco da Fúria, que empurraria a nave
+  const k = free(); k.left = 10; k.ore = 'purple'; p.target = null; p.firing = false; // Ametista: qualquer minerador, dureza 1
   const near = (o = k) => { p.x = p.tx = o.x + 100; p.y = p.ty = o.y; p.hp = 1e9; }; // ao lado do asteroide, e sem morrer para quem passar atirando
   near(); p.mining = k; frames(1);
   assert(!p.mining && !p.beam && k.left === 10, 'sem minerador não minera');
@@ -261,14 +262,14 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert(Math.hypot(rocks.at(-1)!.x - p.x, rocks.at(-1)!.y - p.y) >= CLEAR - 5, 'o asteroide de reposição nasce longe do jogador');
   // porão cheio: o feixe desliga e a carga não passa do limite da nave
   // minério valioso é mais difícil: a Safira só sai com o Mk3, e mais devagar (dureza 3)
-  const kb = rocks[0]; kb.ore = 'blue'; kb.left = 30; near(kb); p.mining = kb; frames(2);
+  const kb = free(); kb.ore = 'blue'; kb.left = 30; near(kb); p.mining = kb; frames(2);
   assert(!p.mining && !p.beam && kb.left === 30 && stats().mineLevel === 2, 'o Mk2 não extrai Safira');
   save.mods[save.mods.indexOf('D2')] = 'D3'; assert.equal(stats().mineLevel, 3);
   const blue0 = save.cargo.blue; p.mining = kb; for (let i = 0; i < 100; i++) { near(kb); update(.01); }
   assert(p.beam && Math.abs(save.cargo.blue - blue0 - MODS.D3.val / ORES.blue.hard) < 1e-6, `1 s de Mk3 em Safira: ${save.cargo.blue - blue0}`);
   for (const o of keys(ORES)) save.cargo[o] = 0;
   p.mining = null; kb.ore = 'purple'; save.mods[save.mods.indexOf('D3')] = 'D2';
-  const k2 = rocks[0]; k2.left = 50; save.cargo[k2.ore] += stats().cargo - cargoUsed() - 1;
+  const k2 = free(); k2.left = 50; save.cargo[k2.ore] += stats().cargo - cargoUsed() - 1;
   p.mining = k2; for (let i = 0; i < 300; i++) { near(k2); update(.01); }
   assert(Math.abs(cargoUsed() - stats().cargo) < 1e-6 && !p.mining && !p.beam && Math.abs(k2.left - 49) < 1e-6, `porão: ${cargoUsed()}`);
   // venda: só unidades inteiras, pelo preço de cada minério
@@ -431,12 +432,15 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   progress({kill: 'raider'}); progress({buy: 'laser'}); assert.equal(questNow().n, 0, 'o que a missão não pede não conta');
   for (let i = 0; i < 3; i++) progress({kill: 'drone'});
   assert(needsTalk() && questNow().stage === 'ready', 'três Drones: volta para conversar');
-  assert(talkNow()!.shop, 'a entrega emenda o início da próxima, que abre o hangar');
+  assert(!talkNow()!.shop && lines().every(w => w === 'huedro'), 'a entrega é só a entrega: a próxima não começa sozinha');
+  talkDone(); assert(questNow().id === 'primeiro-laser' && questNow().stage === 'offer' && needsTalk() && !questGoal(), 'a próxima fica disponível no hangar, sem cobrar no painel');
+  assert(talkNow()!.shop, 'aceitar a do laser abre o hangar no fim da conversa');
   talkDone(); assert(questNow().id === 'primeiro-laser' && questNow().stage === 'active' && !needsTalk());
   p.x = BASE.x; p.y = BASE.y; save.credits = 1e6;
   assert(buyMod('S1') && questNow().stage === 'active', 'comprar outra coisa não conta');
   assert(buyMod('L1') && questNow().stage === 'ready', 'comprar um laser cumpre');
-  assert.deepEqual([...new Set(lines())], ['huedro', 'fabricio'], 'o Huedro passa a palavra ao Fabrício');
+  assert(lines().every(w => w === 'huedro'), 'o Huedro entrega');
+  talkDone(); assert.deepEqual([questNow().id, questNow().stage, [...new Set(lines())]], ['amostras', 'offer', ['fabricio']], 'e o Fabrício se apresenta quando o piloto aceita a dele');
   save.mods.splice(0, save.mods.length, ...save.mods.filter(k => MODS[k].type !== 'mining')); save.inv.length = 0;
   assert.deepEqual(talkDone().items, ['D1'], 'o Fabrício entrega o Minerador Mk1');
   assert(save.mods.includes('D1') && questGoal()!.who === 'Fabrício');
@@ -481,7 +485,8 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert.equal(questNow('ops').id, 'calibracao-navegacao');
   assert(!questTarget() && questGoal()!.goal.includes(`X ${PLACES['baliza'].x}`), 'navegação: sem marcador, só as coordenadas');
   arrive(HOME, PLACES['baliza'].x, PLACES['baliza'].y); talkDone('ops'); arrive(HOME, 0, 0);
-  assert(questNow('ops').id === 'patrulha' && questNow('ops').stage === 'active', 'depois da calibração, os contratos');
+  assert(questNow('ops').id === 'patrulha' && questNow('ops').stage === 'offer' && board().some(b => b.track === 'ops' && b.kind === 'offer'), 'depois da calibração, os contratos ficam disponíveis no hangar');
+  talkDone('ops'); assert.equal(questNow('ops').stage, 'active', 'aceito');
   for (let i = 0; i < 10; i++) progress({kill: 'drone'});
   assert(questNow('ops').stage === 'ready' && needsTalk(), 'contrato cumprido: entrega na base');
   const c0 = save.credits; talkDone('ops'); assert.equal(save.credits, c0 + 1200);
@@ -626,7 +631,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
 // o bico da nave aponta para o alvo enquanto ela o ataca, mesmo voando para outro lado; sem atacar, aponta para onde vai
 {
   reset();
-  const e = nearest('drone'), aim = () => Math.atan2(e.y - p.y, e.x - p.x), near = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 1e-6;
+  const e = enemies.find(o => o.t.key === 'drone' && !solid({x: o.x, y: o.y}, 700, false))!, aim = () => Math.atan2(e.y - p.y, e.x - p.x), near = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 1e-6;
   const fly = () => Math.atan2(p.ty - p.y, p.tx - p.x); // direção do voo: rumo ao meio do mapa, longe de qualquer borda
   p.x = e.x + (e.x < M.w / 2 ? 200 : -200); p.y = e.y + (e.y < M.h / 2 ? 150 : -150); // ao lado do alvo, do lado de dentro do mapa
   p.tx = M.w / 2; p.ty = M.h / 2; p.target = e; e.hp = 1e9;
@@ -731,7 +736,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
     const kill = (BOSS.hp + BOSS.sh - burst) / dps, last = (SHIPS[ship].hp + s.shield * MODS.S3.val) / (BOSS.dmg / 1.3); // 1,3 s = ciclo de tiro dos inimigos
     return last / kill;
   };
-  const ships = keys(SHIPS), top = ships[ships.length - 1], second = ships[ships.length - 2];
+  const ships = FLEET, top = ships[ships.length - 1], second = ships[ships.length - 2];
   assert(duel(top) > 1.03 && duel(top) < 1.12, `${top} contra o chefe tem de ser apertado: aguenta ${duel(top).toFixed(2)}x o tempo de matar`);
   assert(duel(second) < 1, `${second} não deveria vencer de uma vez: ${duel(second).toFixed(2)}x`);
 }
@@ -811,7 +816,9 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; shots.length = 0; // o jogador some: ele volta para casa e fica por lá
   for (let i = 0; i < 2000; i++) update(.05);
   assert(Math.hypot(e.x - h.x, e.y - h.y) < 600, 'voltou para perto de casa');
-  for (const o of enemies) assert(Math.hypot(o.x - o.hx, o.y - o.hy) < (o.t.leash ?? LEASH) + 80, `${o.t.name} longe de casa`);
+  // (quem mora no caminho de um NPC é empurrado pelo casco dele: esses ficam de fora da conta)
+  const shoved = (o: Enemy) => npcs.some(n => Math.hypot(o.hx - n.x, o.hy - n.y) < NPCS[n.id].r * 1.5 + 2000);
+  for (const o of enemies) if (!shoved(o)) assert(Math.hypot(o.x - o.hx, o.y - o.hy) < (o.t.leash ?? LEASH) + 80, `${o.t.name} longe de casa`);
 }
 
 // reposição: quem substitui os inimigos destruídos nasce longe do jogador, nunca na área que ele está limpando
@@ -826,8 +833,36 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   for (const e of fresh) assert(Math.hypot(e.x - p.x, e.y - p.y) >= CLEAR - 5, 'inimigo renasceu perto do jogador');
 }
 
-// o Ferrão (lacaio da Poliveira) já tem modelo e pontos de tiro, mas ainda não está em nenhum mapa
-assert(HARD.ferrao.length && ENGINES.ferrao.length && !keys(MAPS).some(k => [...MAPS[k].enemies, ...(MAPS[k].guards ?? []).map(g => g.def), ...(MAPS[k].boss ? [MAPS[k].boss!.def] : [])].includes(FERRAO)));
+// a Northstar (próxima nave do jogador) e o Cruzador UNSA (NPC) já estão no código, mas fora do jogo
+assert(SHIPS.northstar.soon && !FLEET.includes('northstar') && FLEET.at(-1) === 'interceptor', 'a Northstar ainda não está à venda');
+assert(SHIPS.northstar.cost > SHIPS.interceptor.cost && SHIPS.northstar.hp > SHIPS.interceptor.hp, 'e vem depois da Interceptor');
+assert(NPCS.unsa.r > MAPS.silent.boss!.def.r * 2, 'o Cruzador UNSA é enorme');
+// NPCs: o Cruzador UNSA anda bem devagar pela rota dele em Outer Space, longe da base; é sólido: não deixa nada passar
+// por dentro (nem a nave do jogador, nem inimigos) e nada nasce dentro dele
+{
+  reset();
+  assert(!keys(MAPS).some(k => MAPS[k].npcs?.length), 'por enquanto, nenhum NPC no jogo: o cruzador e a Fúria estão só no código');
+  M.npcs = [FURIA_PATROL]; toSilent(); toHome(); // a Fúria na ronda dela, só durante este teste
+  const d = M.npcs!.find(o => o.id === 'furia')!, n = npcs.find(o => o.id === 'furia')!, side = NPCS.furia.w * NPCS.furia.r * 1.5 + 300;
+  const far = {x: n.x - Math.sin(n.a) * side, y: n.y + Math.cos(n.a) * side};
+  assert(NPCS.furia.r === NPCS.unsa.r * 1.5, 'a Fúria tem 1,5x o tamanho do cruzador');
+  assert(d.route.every(q => Math.hypot(q.x - BASE.x, q.y - BASE.y) > BASE.r + NPCS.furia.r * 1.5 + 100) && d.route.every(q => Math.hypot(q.x - M.portals[0].x, q.y - M.portals[0].y) > NPCS.furia.r * 1.5 + 100), 'a rota passa longe da base e do portal');
+  const n0 = {x: n.x, y: n.y}; frames(60);
+  const went = Math.hypot(n.x - n0.x, n.y - n0.y);
+  assert(went > d.speed * .9 && went < d.speed * 1.1, `anda devagar: ${went.toFixed(1)} em 1 s`);
+  assert(solid({x: n.x, y: n.y}, 0, false) && !solid({x: n.x - Math.sin(n.a) * side, y: n.y + Math.cos(n.a) * side}, 0, false), 'o casco ocupa o centro e não o lado de fora');
+  // atravessar pelo meio: sai do outro lado? não; a nave fica sempre fora do casco
+  p.x = p.tx = far.x; p.y = p.ty = far.y; p.hp = 1e9;
+  p.tx = n.x + Math.sin(n.a) * side; p.ty = n.y - Math.cos(n.a) * side;
+  let inside = false;
+  for (let i = 0; i < 600; i++) { frames(1); p.hp = 1e9; if (solid({x: p.x, y: p.y}, 0, false)) inside = true; }
+  assert(!inside, 'a nave do jogador não entra no casco');
+  assert(!enemies.some(e => solid({x: e.x, y: e.y}, 0, false)) && !rocks.some(k => solid(k, 0, false)), 'nenhum inimigo ou asteroide dentro do casco');
+  delete M.npcs; toSilent(); toHome(); reset();
+}
+// o Ferrão (lacaio da Poliveira) e a Fúria (a nave dela) já têm modelo e pontos de tiro, mas ainda não estão em nenhum mapa
+for (const [key, def] of [['ferrao', FERRAO], ['furia', FURIA]] as const)
+  assert(HARD[key].length && ENGINES[key].length && !keys(MAPS).some(k => [...MAPS[k].enemies, ...(MAPS[k].guards ?? []).map(g => g.def), ...(MAPS[k].boss ? [MAPS[k].boss!.def] : [])].includes(def)), key);
 // dados dos mapas: o inicial tem base, e todo portal leva a um ponto dentro do mapa de destino, longe dos portais de lá
 assert(M.base, 'o mapa inicial precisa de base');
 for (const k of keys(MAPS)) for (const g of MAPS[k].portals) {
@@ -996,10 +1031,13 @@ for (const dir of keys(FOLDERS)) for (const f of readdirSync(`public/models/${di
   const b = new THREE.Box3().setFromObject(object), s = b.getSize(new THREE.Vector3());
   assert(Number.isFinite(s.x) && s.x > 0, f);
   // mísseis têm dezenas de materiais, mas só viram ícone (uma foto), então o limite de malhas não vale para eles
-  assert((dir === 'missiles' || object.children.length <= 12) && object.children.every(n => n instanceof THREE.Mesh), `${f}: peças não foram juntadas (uma malha por material)`);
+  // o Cruzador UNSA (NPC, um só na tela, quando aparecer) tem 14 materiais: fica com 14 malhas
+  assert((dir === 'missiles' || object.children.length <= (f === 'unsa.glb' ? 14 : 12)) && object.children.every(n => n instanceof THREE.Mesh), `${f}: peças não foram juntadas (uma malha por material)`);
   // acabamento: as naves do jogador vêm com o material completo (relevo/metal); todo o resto é fosco, mais leve
   const rich = object.children.some(n => ((n as THREE.Mesh).material as THREE.Material).type === 'MeshStandardMaterial');
-  assert.equal(rich, dir === 'ships' && Object.hasOwn(SHIPS, f.replace('.glb', '')), `${f}: material ${rich ? 'completo' : 'fosco'} no lugar errado`);
+  // (os NPCs, enormes na tela, podem vir com o completo quando o arquivo traz relevo: sem ele, o casco vira uma chapa lisa)
+  if (f === 'furia.glb') assert(rich, 'a Fúria com o material completo (metal polido), senão o casco vira uma chapa lisa');
+  if (!Object.hasOwn(NPCS, f.replace('.glb', ''))) assert.equal(rich, dir === 'ships' && Object.hasOwn(SHIPS, f.replace('.glb', '')), `${f}: material ${rich ? 'completo' : 'fosco'} no lugar errado`);
   if (dir === 'ships' || dir === 'bases' || dir === 'pets') assert(Math.abs(Math.max(s.x, s.z) - 2) < 1e-6 && s.y < 2, f);
   else if (dir === 'asteroids') assert(Math.abs(Math.max(s.x, s.y, s.z) - 2) < 1e-6, f);
   else if (dir === 'weapons') assert(Math.abs(s.x - .46) < 1e-6 && b.max.x > -b.min.x && b.max.y > -b.min.y && s.y < s.x, f);

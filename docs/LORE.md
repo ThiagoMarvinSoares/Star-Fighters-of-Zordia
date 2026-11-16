@@ -186,7 +186,9 @@ A progressão representa a evolução de um piloto iniciante até se tornar um d
 | Comandante Augusto | retrato `public/characters/huedro.jpg`; chamado de Huedro pelos próximos | `NAMES`, `FACES` |
 | Fabrício | retrato `public/characters/fabricio.jpg` | `NAMES`, `FACES` |
 | Robôs de reparo | drones que consertam o casco fora da base, com a nave parada | `MODS` R0 a R3 |
-| A Poliveira | ainda sem história escrita (perguntar ao autor). Já existe o lacaio básico dela, o **Ferrão**: nave fina e comprida, de casco escuro, com modelo e pontos de tiro prontos, mas fora de todos os mapas | `FERRAO`, `public/models/ships/ferrao.glb` |
+| Northstar | a próxima nave do jogador (tier 5, depois da Interceptor): modelo, pontos de tiro e números provisórios prontos, mas ainda fora do hangar (`soon`) | `SHIPS.northstar` |
+| Cruzador UNSA | um NPC enorme (mais de quatro vezes a estação): não luta nem se compra; ainda sem história nem lugar no mapa | `NPCS.unsa`, `public/models/ships/unsa.glb` |
+| A Poliveira | ainda sem história escrita (perguntar ao autor). Já existem, com modelo e pontos de tiro prontos mas fora de todos os mapas: a **Fúria**, a nave dela (casco em losango com asas soltas flutuando em volta; números provisórios de chefe), e o **Ferrão**, o lacaio básico (nave fina e comprida, de casco escuro) | `FURIA`, `FERRAO`, `public/models/ships/furia.glb` e `ferrao.glb` |
 
 ## Parte 3: histórias já contadas
 

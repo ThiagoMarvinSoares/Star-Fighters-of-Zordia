@@ -1,8 +1,8 @@
 // Desenho: lê o estado e pinta o canvas. Nunca altera o estado do jogo.
 // Tudo aqui é canvas 2D, menos as naves: elas são desenhadas em 3D por ships3d.ts e copiadas para cá.
-import { ENEMY_MISSILE, RANGE, STATION_R, PORTAL_R, MISSILE_R, MINE_RANGE, MAPS, MODS, MODEL_DIR, ORES } from '../game/data.ts';
+import { ENEMY_MISSILE, RANGE, STATION_R, PORTAL_R, MISSILE_R, MINE_RANGE, MAPS, MODS, MODEL_DIR, ORES, NPCS } from '../game/data.ts';
 import type { Shot } from '../game/state.ts';
-import { world, save, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, view, map } from '../game/state.ts';
+import { world, npcs, save, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, view, map } from '../game/state.ts';
 import type { Stats } from '../game/state.ts';
 import { clamp, dist } from '../game/util.ts';
 import type { Point } from '../game/util.ts';
@@ -249,6 +249,7 @@ export function draw() {
     if (k === p.mining) { ctx.strokeStyle = ORES[k.ore].color; ring(k, k.r * SCALE + 10); ctx.stroke(); }
   }
   const props = scenery().filter(pr => pr.map === world.map && onScreen(pr, pr.r * 3)), tnow = performance.now() / 60000;
+  const ships = npcs.filter(n => onScreen(n, NPCS[n.id].r * 3)); // NPCs do mapa (andam devagar: sim.ts)
   const out = petStep(st.r);
   // alvo de missão (ir até um lugar): um anel tracejado no chão, girando devagar
   const target = questTarget(world.map); // noutro mapa: o portal que leva até lá
@@ -259,6 +260,7 @@ export function draw() {
                 {id: p, o: p, r: st.r, key: save.ship},
                 ...out.map(o => ({id: o, o, r: PET.r * (.3 + .7 * pet.on), model: PET_MODEL, h: PET.h * pet.on})),
                 ...props.map(pr => ({id: propId(pr), o: {x: pr.x, y: pr.y, a: pr.a + tnow * pr.spin * 6.2832}, r: pr.r, model: pr.model})),
+                ...ships.map(n => ({id: n, o: n, r: NPCS[n.id].r, model: NPCS[n.id].model, h: NPCS[n.id].h})),
                 ...strikes.filter(s => s.live && onScreen(s)).map(s => ({id: s, o: {x: s.x, y: s.y, a: s.a}, r: MISSILE_R, model: ENEMY_MISSILE_MODEL, h: 10})),
                 ...shots.flatMap(q => { const model = q.live && onScreen(q) && missileModel(q); return model ? [{id: q, o: q, r: MISSILE_R, model, h: q.h}] : []; })],
                p, cw / z, ch / z, cv3w(), cv3h());
@@ -300,6 +302,7 @@ export function draw() {
   }
   // asteroides: nome do minério e quanto resta; feixe de mineração, tremido, da nave até o asteroide
   ctx.font = nameFont;
+  for (const n of ships) { ctx.fillStyle = '#9fb6cc'; ctx.fillText(NPCS[n.id].name, n.x, n.y * TILT + NPCS[n.id].r * SCALE * .5 + nameGap); }
   for (const pr of props) { ctx.fillStyle = '#9fb6cc'; ctx.fillText(pr.label, pr.x, pr.y * TILT + pr.r * SCALE + 4 + nameGap); } // cenário das missões, em cinza frio
   for (const k of stones) { // quando o minerador equipado não alcança o minério, o nome diz qual é preciso
     const o = ORES[k.ore], need = st.mineLevel < o.level ? ` · exige Mk${o.level}` : '';
