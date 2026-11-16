@@ -23,11 +23,13 @@ const CANNON = `<svg viewBox="0 0 32 32" width="30" height="30"><g transform="ro
   <rect x="3" y="11" width="13" height="10" rx="2" fill="#55627a"/>
   <rect x="15" y="14" width="13" height="4" fill="#aab8cc"/>
   <rect x="27" y="13" width="2" height="6" fill="#4cf"/></g></svg>`;
+const WRENCH = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#5dff7a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M14 6a4 4 0 0 0 5 5l-9 9a2 2 0 0 1-3-3l9-9a4 4 0 0 0-2-2zM7 4l3 3-2 2-3-3"/></svg>`;
 const MULTI = `<svg viewBox="0 0 32 32" width="30" height="30" fill="none" stroke="#ff7ad9" stroke-width="2">
   <circle cx="16" cy="9" r="5"/><circle cx="8" cy="22" r="5"/><circle cx="24" cy="22" r="5"/><path d="M16 4v10M11 9h10M8 17v10M3 22h10M24 17v10M19 22h10" stroke-width="1.2"/></svg>`;
 // foto de um módulo; sem ele (ou enquanto o modelo não carrega), o desenho reserva
 const modIcon = (k: ModKey | undefined, fallback: string) => {
-  const m = k && MODS[k], u = m && m.model && iconOf(`${MODEL_DIR[m.type]}/${m.model}`);
+  const m = k && MODS[k], u = m && m.model && iconOf(`${MODEL_DIR[m.type]}/${m.model}`, false, 256, m.bots);
   return u ? `<img src="${u}" alt="">` : fallback;
 };
 const bestIcon = (type: ModType, fallback: string) => modIcon(best(type), fallback);
@@ -49,6 +51,9 @@ function slots(): Slot[] {
     // chip de múltiplos alvos, depois dos mísseis e só com ele equipado: de ligar e desligar. É o único chip com casa:
     // o de dano é passivo, vale sempre que está equipado. O ícone é o do próprio Multialvo, não o do "melhor chip".
     ...(stats().multi ? [{name: `Múltiplos alvos (até ${stats().multi + 1})`, icon: () => modIcon(save.mods.find(k => MODS[k].chip === 'multi'), MULTI), active: () => p.multi, use: () => { p.multi = !p.multi; }}] : []),
+    // robô de reparo: começa sozinho depois de uns segundos fora de combate; a casa o põe para consertar na hora.
+    // Acende enquanto ele conserta.
+    ...(stats().repair ? [{name: 'Robô de reparo: consertar agora', icon: () => modIcon(best('repair'), WRENCH), active: () => p.fixing, use: () => { p.fix = true; }}] : []),
   ];
 }
 

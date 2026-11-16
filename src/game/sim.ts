@@ -1,5 +1,5 @@
 // Simulação: as regras do jogo. Só altera o estado; não sabe nada de canvas, tela nem teclado.
-import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, ENEMY_MISSILE, PORTAL_R, PICKUP_R, BOSS_DROP, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
+import { RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ENEMY_MISSILE, PORTAL_R, PICKUP_R, BOSS_DROP, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
 import type { EnemyDef, MapDef, MapKey } from './data.ts';
 import type { ModelKey, ModKey } from './data.ts';
 import { save, persist, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, world, map } from './state.ts';
@@ -7,13 +7,15 @@ import type { Body, Enemy, Player, Rock } from './state.ts';
 import { clamp, dist, rnd, rand } from './util.ts';
 import type { Point } from './util.ts';
 import { HARD, ENGINES, SCALE, mount } from './models.ts';
-import { progress } from './missions.ts';
+import { progress, arrive } from './missions.ts';
 
 type Heading = Point & { a: number };
 
 let now = 0; // relógio do jogo, em segundos
 const bossAt: Partial<Record<MapKey, number>> = {}; // quando o chefe de cada mapa (re)nasce; lembrado mesmo fora do mapa
 let seeded = false; // o mapa atual já recebeu a população inicial
+/** guardas de um ponto fixo (MapDef.guards): ficam fora da cota do tipo deles e não são repostos */
+export const guards = new WeakSet<Enemy>();
 
 /** raio em volta da base do mapa atual onde inimigos não entram (0 se o mapa não tem base) */
 export const keepOut = () => { const b = map().base; return b ? b.r + KEEP_MARGIN : 0; };
@@ -175,8 +177,17 @@ export function update(dt: number) {
   const calm = (e: Enemy) => { if (e.hostile) { e.hostile = false; if (!boss || e.t !== boss.def) { e.hp = e.t.hp; e.sh = e.t.sh; } } };
   if (safe) enemies.forEach(calm); // o jogador ficou a salvo: quem o perseguia desiste
   if (now - p.lastHit > 5) p.sh = Math.min(st.maxSh, p.sh + st.maxSh * .08 * dt);
-  // a vida só se recupera a salvo na base; fora dela, só o escudo volta (acima)
+  // A vida se recupera a salvo na base; fora dela, só com um robô de reparo e com a nave parada: sozinho, depois de
+  // REPAIR_DELAY segundos sem atirar nem levar dano, ou na hora, pedido pela barra de atalhos. Andando, o conserto pausa
+  // (os drones voltam para dentro) e recomeça quando a nave parar. Atirar ou levar dano depois do pedido o
+  // interrompe. Os drones, os feixes e as faíscas são só desenho (view/render.ts).
+  if (p.fix) { p.fix = false; p.fixAt = now; }
+  const busy = Math.max(p.lastHit, p.lastShot);
+  p.fixing = !safe && !moved && !!st.repair && p.hp < st.maxHp && (now - busy >= REPAIR_DELAY || p.fixAt > busy); // só com a nave parada
   if (safe) p.hp = Math.min(st.maxHp, p.hp + st.maxHp * .2 * dt);
+  else if (p.fixing) {
+    p.hp = Math.min(st.maxHp, p.hp + st.maxHp * st.repair / 100 * dt);
+  }
 
   // ---------- armas do jogador ----------
   p.cd -= dt;
@@ -209,6 +220,8 @@ export function update(dt: number) {
 
   // a chama sai dos bocais na posição final da nave (depois de ela virar para o alvo) e tem a cor do motor equipado
   if (moved) thrust(p, st.r, save.ship, st.flame);
+
+  arrive(world.map, p.x, p.y); // lugares de missão
 
   // espólio: passar por cima recolhe para o inventário
   for (let i = drops.length; i--;) if (dist(p, drops[i]) < PICKUP_R) {
@@ -384,7 +397,7 @@ export function update(dt: number) {
     explode(p, st.r); shots.length = 0; strikes.length = 0;
     const SPAWN = MAPS[HOME].spawn; // renasce sempre na base do mapa inicial, esteja onde estiver
     if (world.map !== HOME) travel(HOME, SPAWN.x, SPAWN.y);
-    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0});
+    Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0, fixAt: -99, fixing: false});
     p.deaths++; // input.ts usa isso para soltar o botão do mouse
     persist(); // a posição salva passa a ser a da base: recarregar a página não devolve a nave ao lugar onde morreu
     enemies.forEach(calm);
@@ -394,8 +407,9 @@ export function update(dt: number) {
   const cur = map(), cb = cur.boss; // de novo: a morte pode ter levado a nave de volta ao mapa inicial
   let alive = !!cb && enemies.some(e => e.t === cb.def);
   if (cb && !alive && now >= (bossAt[world.map] ?? 0)) { enemies.push(born(cb.def, cb.x, cb.y)); alive = true; }
-  quotas(cur).forEach((want, i) => { // os comuns: cada tipo completa a cota dele, na faixa dele
-    for (let have = enemies.filter(e => e.t === cur.enemies[i]).length; have < want; have++) enemies.push(spawn(i, seeded));
+  if (!seeded) for (const g of cur.guards ?? []) { const e = born(g.def, g.x, g.y); guards.add(e); enemies.push(e); } // guardas: só ao povoar o mapa
+  quotas(cur).forEach((want, i) => { // os comuns: cada tipo completa a cota dele, na faixa dele (os guardas não contam)
+    for (let have = enemies.filter(e => e.t === cur.enemies[i] && !guards.has(e)).length; have < want; have++) enemies.push(spawn(i, seeded));
   });
   while (rocks.length < cur.asteroids) rocks.push(rock0(seeded));
   seeded = true;

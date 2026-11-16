@@ -1,12 +1,12 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME } from './src/game/data.ts';
+import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME, DRONE_ELITE } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
 import { parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
 import { HARD, ENGINES, mount } from './src/game/models.ts';
-import { update, hit, explode, keepOut, travel, resume } from './src/game/sim.ts';
-import { MISSIONS, mission, needsTalk, questNow, questGoal, progress, talkNow, talkDone } from './src/game/missions.ts';
+import { update, hit, explode, keepOut, travel, resume, guards } from './src/game/sim.ts';
+import { journal, pin, MISSIONS, PLACES, mission, needsTalk, questNow, questGoal, questTarget, questRadio, progress, talkNow, talkDone, arrive, fieldTalk, fieldTalkNow, scenery, cue, replay, talkFor, questPlace } from './src/game/missions.ts';
 import { keys, seed } from './src/game/util.ts';
 import * as THREE from 'three';
 import { TILT, COSV, minimap, toWorld, onScreen } from './src/view/camera.ts';
@@ -19,7 +19,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 seed(+(process.env.SEED ?? 20261113));
 
 // o mapa inicial e os números dele que os testes usam
-const M = MAPS[HOME], BASE = M.base!, W = M.w, POPULATION = M.population, BOSS_AT = M.boss!, BOSS_RESPAWN = M.boss!.respawn, KEEP_OUT = BASE.r + 250;
+const M = MAPS[HOME], BASE = M.base!, W = M.w, POPULATION = M.population + (M.guards?.length ?? 0), KEEP_OUT = BASE.r + 250; // inimigos no mapa: os comuns e os guardas
+// os Dreadnoughts e o Leviatã ficam nas Rotas Silenciosas: os blocos que lutam com eles vão até lá e voltam
+const S = MAPS.silent, BOSS_AT = S.boss!, BOSS_RESPAWN = S.boss!.respawn;
 assert.equal(keepOut(), KEEP_OUT);
 const frames = (n: number) => { for (let i = 0; i < n; i++) update(.016); };
 const mine = () => shots.filter(q => q.src === p);
@@ -29,6 +31,8 @@ const park = (e: Enemy, d: number) => { p.x = p.tx = e.x + d; p.y = p.ty = e.y; 
 const put = (e: Enemy, x: number, y: number) => { e.x = e.wx = e.hx = x; e.y = e.wy = e.hy = y; e.back = false; };
 // Começo de cada bloco que roda a simulação: o jogador volta a um estado conhecido (parado onde está, inteiro, sem
 // alvo, armas e feixe desligados) e somem tiros, partículas e perseguições deixados pelo bloco anterior.
+const toSilent = () => { travel('silent', S.spawn.x, S.spawn.y); frames(1); };
+const toHome = () => { travel(HOME, BASE.x, BASE.y); frames(1); p.hp = stats().maxHp; p.sh = stats().maxSh; };
 const reset = () => {
   Object.assign(p, {tx: p.x, ty: p.y, target: null, firing: false, auto: false, launch: null, multi: false, extra: [], mining: null, beam: false, cd: 0, mis: [], mleft: true, hp: stats().maxHp, sh: stats().maxSh, lastHit: -99, lastShot: -99, fight: 0});
   shots.length = 0; parts.length = 0; strikes.length = 0;
@@ -86,7 +90,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
 // alcance: nunca espera mais de 8 minutos por uma compra, e a 1ª é imediata. (Ele não fica parado juntando para um item
 // caro, como o Míssil Mk4, enquanto há melhoria mais barata disponível.)
 {
-  type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[]; chip: ModKey[] };
+  type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[]; chip: ModKey[]; repair: ModKey[] };
   const ships = keys(SHIPS), sum = (l: ModKey[]) => l.reduce((a, m) => a + MODS[m].val, 0);
   const income = (k: Kit) => { // créditos por minuto
     const dps = (sum(k.laser) + sum(k.missile) / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
@@ -111,7 +115,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
     return out;
   };
   const byType = (t: string) => START.mods.filter(m => MODS[m].type === t);
-  let kit: Kit = {ship: START.ship, laser: byType('laser'), shield: byType('shield'), engine: byType('engine'), aim: byType('aim'), missile: byType('missile'), mining: byType('mining'), chip: byType('chip')}, bank: number = START.credits, worst = 0, n = 0;
+  let kit: Kit = {ship: START.ship, laser: byType('laser'), shield: byType('shield'), engine: byType('engine'), aim: byType('aim'), missile: byType('missile'), mining: byType('mining'), chip: byType('chip'), repair: byType('repair')}, bank: number = START.credits, worst = 0, n = 0;
   for (let opts = options(kit); opts.length; opts = options(kit), n++) {
     const inc = income(kit), ehp = (k: Kit) => SHIPS[k.ship].hp + sum(k.shield);
     const waitFor = (cost: number) => Math.max(0, cost - bank) / inc;
@@ -128,7 +132,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
 
 // o mundo roda sem NaN
 frames(300);
-assert.equal(enemies.length, POPULATION + 1); // os comuns + o chefe
+assert.equal(enemies.length, POPULATION); // sem chefe no mapa inicial
 assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
 
 // voar até um Drone e matar rende a recompensa dele
@@ -355,7 +359,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
 
 // Dreadnought Prime: ao soltar o primeiro míssil, mira um segundo para onde o jogador desviou
 {
-  reset();
+  reset(); toSilent();
   const all = [...enemies], e = enemies.find(o => o.t.name === 'Dreadnought Prime')!, home = {x: e.hx, y: e.hy};
   enemies.length = 0; enemies.push(e);
   const mods0 = [...save.mods]; save.mods.splice(0, save.mods.length, ...mods0.filter(m => MODS[m].type !== 'shield'));
@@ -371,15 +375,14 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   for (let i = 0; i < 200 && strikes.length; i++) { e.cd = 1e9; e.mcd = 99; put(e, 3000, 2000); e.hostile = true; frames(1); }
   assert.equal(hp0 - p.hp, Math.round(e.t.dmg * ENEMY_MISSILE.mult), 'quem ficou parado no lado novo leva o segundo; o primeiro passou longe');
   save.mods.splice(0, save.mods.length, ...mods0);
-  enemies.length = 0; enemies.push(...all); e.hostile = false; p.hp = stats().maxHp; p.sh = stats().maxSh; strikes.length = 0;
-  put(e, home.x, home.y); // de volta à casa dele, para os blocos seguintes
+  void all; void home; strikes.length = 0; toHome();
 }
 
 // Leviatã: três ataques de míssil em rodízio. Reto; leque de três (o do meio no jogador); e um teleguiado de curva aberta,
 // que acerta quem fica parado mas não vira mais que a curva máxima e se apaga depois de voar o alcance dele
 {
-  reset();
-  const all = [...enemies], b = enemies.find(o => o.t === BOSS)!, home = {x: b.hx, y: b.hy}, H = ENEMY_MISSILE.homing;
+  reset(); toSilent();
+  const b = enemies.find(o => o.t === BOSS)!, H = ENEMY_MISSILE.homing;
   enemies.length = 0; enemies.push(b);
   const mods0 = [...save.mods]; save.mods.splice(0, save.mods.length, ...mods0.filter(m => MODS[m].type !== 'shield'));
   // parado, sem lasers e sem novo míssil; e sozinho no mapa (a reposição repovoa a cada quadro, e os recém-nascidos saem antes de agir)
@@ -410,15 +413,15 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   b.sh = BOSS.sh; b.lastHit = -99; const [n] = launch();
   assert(n.warn0 === ENEMY_MISSILE.warn && b.mcd === ENEMY_MISSILE.cd, 'com escudo: normal');
   save.mods.splice(0, save.mods.length, ...mods0);
-  enemies.length = 0; enemies.push(...all); b.hostile = false; b.atk = 0; put(b, home.x, home.y);
-  p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; p.sh = stats().maxSh; strikes.length = 0;
+  strikes.length = 0; toHome();
 }
 
 // missões: a sequência do tutorial (Drones, laser, amostras) pelo motor genérico; o progresso de antes das missões
 // (save.tut) continua do mesmo ponto; e todas as missões apontam para missões que existem
 {
   reset();
-  const keep = {quest: save.quest, credits: save.credits, mods: [...save.mods], inv: [...save.inv], cargo: {...save.cargo}};
+  const keep = {quest: save.quest, side: save.side, credits: save.credits, mods: [...save.mods], inv: [...save.inv], cargo: {...save.cargo}};
+  delete save.side;
   for (const m of MISSIONS) assert(!m.next || mission(m.next), `${m.id}: a próxima missão não existe`);
   const lines = () => talkNow()!.lines.map(l => l[0]);
   delete save.quest; delete save.tut;
@@ -441,7 +444,8 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   progress({mine: 'purple', amount: .5}); assert.equal(questNow().stage, 'ready');
   save.cargo.purple = 25; const cr0 = save.credits;
   assert.equal(talkDone().credits, 300);
-  assert(save.cargo.purple === 5 && save.credits === cr0 + 300 && questNow().stage === 'done' && !needsTalk() && questGoal() === null, 'amostras entregues, pagamento, fim da sequência');
+  assert(save.cargo.purple === 5 && save.credits === cr0 + 300 && questNow().stage === 'done', 'amostras entregues, pagamento, fim da sequência');
+  assert(!talkNow() && !needsTalk(), 'a secundária não tem conversa na base: começa quando o piloto acha a nave');
   // progresso de antes das missões: cada passo antigo vira o ponto equivalente
   for (const [tut, id, stage, n] of [[1, 'boas-vindas', 'active', 2], [4, 'primeiro-laser', 'ready', 0], [5, '', 'done', 0], [6, 'amostras', 'active', 7]] as const) {
     delete save.quest; save.tut = tut; save.tutN = 2;
@@ -451,7 +455,138 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert.deepEqual(parseSave({credits: 0, ship: 'scout', mods: [], quest: {id: 'amostras', stage: 'active', n: 4}})!.quest, {id: 'amostras', stage: 'active', n: 4});
   assert.equal(parseSave({credits: 0, ship: 'scout', mods: [], quest: {id: 'x', stage: 'talvez', n: 1}})!.quest, undefined);
   save.quest = keep.quest; save.credits = keep.credits; Object.assign(save.cargo, keep.cargo);
+  if (keep.side) save.side = keep.side; else delete save.side;
   save.mods.splice(0, save.mods.length, ...keep.mods); save.inv.splice(0, save.inv.length, ...keep.inv);
+}
+
+// missão secundária "Wuthering Heights": começa por descoberta (a nave à deriva está nas Rotas Silenciosas desde o começo,
+// e a primeira missão fica escondida até o piloto chegar nela); objetivos de chegar a um lugar; conversas de campo que
+// abrem sozinhas; o cenário (nave de Elyra, estação) muda com o progresso; e a escolha da porta
+{
+  const keep = {quest: save.quest, side: save.side, credits: save.credits};
+  arrive('silent', 0, 0); // nenhum lugar "ocupado" de antes
+  save.quest = {id: 'amostras', stage: 'active', n: 0}; delete save.side;
+  const pl = (id: keyof typeof PLACES) => PLACES[id];
+  assert.deepEqual([questNow('side').id, questNow('side').stage], ['o-sinal-perdido', 'active'], 'mesmo antes de a principal terminar, a secundária já está valendo');
+  assert(talkNow()?.track !== 'side', 'ninguém fala dela na base');
+  assert.equal(questGoal()!.who, 'Fabrício', 'o painel mostra a principal, não a secundária escondida');
+  save.quest = {id: '', stage: 'done', n: 0};
+  assert(!questGoal() && !questTarget() && !questTarget('outer') && journal().every(c => c.track !== 'side'), 'escondida: sem painel, marcador nem menu');
+  delete save.side; save.side = {id: 'o-sinal-perdido', stage: 'offer', n: 0}; // progresso de antes, com a conversa na base esperando
+  assert(!needsTalk() && questNow('side').stage === 'active', 'vira a descoberta: sem "!" na base');
+  assert.equal(pl('nave-elyra').map, 'outer', 'a nave de Elyra fica no mapa inicial, no canto mais afastado');
+  assert.deepEqual(scenery().map(pr => [pr.id, pr.map, pr.x, pr.y]), [['elyra', 'outer', pl('nave-elyra').x, pl('nave-elyra').y]], 'a nave à deriva está lá desde o começo');
+  arrive('outer', pl('nave-elyra').x + pl('nave-elyra').r + 50, pl('nave-elyra').y); assert.equal(questNow('side').stage, 'active', 'perto, mas fora do raio');
+  arrive('outer', pl('nave-elyra').x, pl('nave-elyra').y);
+  assert(questNow('side').stage === 'ready' && fieldTalk() === 'side' && !needsTalk(), 'chegou: a conversa abre ali mesmo, sem "!" na base');
+  const f1 = fieldTalkNow()!;
+  assert(f1.lines.some(l => l[0] === 'elyra-log') && f1.lines.some(l => l[1] === '' && l[2] > 0), 'registros de Elyra e um silêncio');
+  assert(f1.lines.some(l => l[0] === 'huedro') && f1.lines[0][1].includes('transponder'), 'achou a nave: o Fabrício capta o transponder, o Comandante se lembra');
+  assert.equal(journal().find(c => c.track === 'side')!.items[0].status, 'ready', 'descoberta: a sequência aparece no menu');
+  talkDone('side');
+  assert(questNow('side').id === 'a-estacao' && questRadio()?.every(l => l[0] === 'elyra'), 'segunda parte, com transmissões soltas');
+  arrive('silent', pl('estacao-abandonada').x, pl('estacao-abandonada').y);
+  // na conversa da estação, a nave de Elyra só sai do lugar na fala do ALERTA, e vem até o lado da estação
+  const f2 = fieldTalkNow()!, ship = () => scenery().find(pr => pr.id === 'elyra')!;
+  assert(f2.lines[f2.cue!][1].startsWith('ALERTA'), 'a nave vem no ALERTA');
+  assert.deepEqual([ship().map, ship().x, ship().y], ['outer', pl('nave-elyra').x, pl('nave-elyra').y], 'antes da fala, ainda à deriva em Outer Space');
+  const gate = MAPS.silent.portals[0];
+  cue(Date.now() - 5000); assert(ship().map === 'silent' && ship().x > gate.x && ship().x < pl('estacao-abandonada').x, 'a caminho: entrou pelo portal das Rotas Silenciosas');
+  cue(Date.now() - 60_000); const near = [ship().x, ship().y];
+  talkDone('side');
+  assert.deepEqual([ship().x, ship().y], near, 'chegou: fica onde parou');
+  assert.equal(questNow('side').id, 'o-ultimo-retorno');
+  assert.deepEqual(scenery().find(pr => pr.id === 'elyra') && [scenery().find(pr => pr.id === 'elyra')!.x > pl('estacao-abandonada').x], [true], 'a nave de Elyra agora está ao lado da estação');
+  arrive('silent', pl('sistema-central').x, pl('sistema-central').y);
+  const last = fieldTalkNow()!;
+  assert(last.ask && last.ask.then.some(l => l[1] === 'ACESSO CONCEDIDO.'), 'a pergunta da porta');
+  assert(last.ask.then.at(-1)![0] === 'huedro' && last.ask.then.at(-1)![1].includes('volte para a base'), 'depois do sim, a próxima missão vem emendada');
+  assert.equal([...last.lines, ...last.ask.then][last.cue!][1], '', 'a nave some no silêncio, quando a porta abre');
+  assert(scenery().some(pr => pr.id === 'elyra')); cue(); assert(!scenery().some(pr => pr.id === 'elyra'), 'some na fala marcada');
+  const cr0 = save.credits, atDoor = {...save.side!};
+  assert(last.ask.otherwise && [...last.lines, ...last.ask.otherwise][last.cue!][1] === '', 'fechada: a nave também some no silêncio');
+  assert.deepEqual(last.ask.otherwise.at(-1), last.ask.then.at(-1), 'as duas respostas levam à mesma continuação');
+  talkDone('side', false); assert.equal(questNow('side').id, 'depois-do-silencio', 'manteve fechada: a história segue igual');
+  save.side = atDoor; save.credits = cr0;
+  assert.equal(talkDone('side', true).credits, 2000);
+  assert(questNow('side').id === 'depois-do-silencio' && save.credits === cr0 + 2000, 'porta aberta: de volta à base');
+  assert.deepEqual(scenery().map(pr => pr.id), ['station'], 'a nave de Elyra some; a estação fica, em silêncio');
+  const door = MAPS.silent.portals.find(g => g.to === HOME)!;
+  assert.deepEqual(questTarget('silent'), {x: door.x, y: door.y, r: 70}, 'nas Rotas, o marcador aponta o portal de volta');
+  arrive(HOME, BASE.x, BASE.y);
+  assert(fieldTalkNow()!.lines.some(l => l[0] === 'fabricio') && fieldTalkNow()!.lines.some(l => l[0] === 'huedro'), 'na base: Fabrício e o Comandante tentam entender');
+  talkDone('side');
+  assert.equal(questNow('side').id, 'o-farol');
+  arrive('silent', pl('estacao-abandonada').x, pl('estacao-abandonada').y);
+  assert(fieldTalkNow()!.lines.some(l => l[1] === 'FAROL: ATIVO.'));
+  assert.equal(talkDone('side').credits, 1000);
+  assert(questNow('side').stage === 'done' && !questTarget(), 'o farol: fim');
+  assert.deepEqual(scenery().map(pr => pr.id), ['station']);
+  arrive(HOME, 0, 0);
+  assert.deepEqual(parseSave({credits: 0, ship: 'scout', mods: [], side: {id: 'a-estacao', stage: 'active', n: 0}})!.side, {id: 'a-estacao', stage: 'active', n: 0});
+  // menu de missões: as duas sequências, tudo concluído; e acompanhar a secundária dá a vez a ela no painel
+  assert.deepEqual(journal().map(c => [c.chain, c.items.map(i => i.status)]), [['Tutorial', ['done', 'done', 'done']], ['Wuthering Heights', ['done', 'done', 'done', 'done', 'done']]]);
+  save.side = {id: 'a-estacao', stage: 'active', n: 0}; save.quest = {id: 'amostras', stage: 'active', n: 7};
+  assert.deepEqual(journal()[1].items.map(i => [i.id, i.status, i.goal]), [['o-sinal-perdido', 'done', undefined], ['a-estacao', 'active', 'Vá até a estação abandonada']], 'missões futuras não aparecem');
+  assert.equal(journal()[0].items.at(-1)!.goal, 'Extraia 20 de Ametista para análise (7/20)');
+  assert(questGoal()!.goal.startsWith('Extraia'), 'sem acompanhar: o painel mostra a principal');
+  assert.deepEqual(questTarget(), PLACES['estacao-abandonada'], 'a estação tem marcador');
+  assert.equal(questPlace(), 'estacao-abandonada');
+  save.side = {id: 'o-farol', stage: 'active', n: 0};
+  assert.deepEqual(questTarget(), PLACES['estacao-abandonada'], 'já achada: voltar a ela tem marcador');
+  save.side = {id: 'depois-do-silencio', stage: 'active', n: 0};
+  assert.deepEqual(questTarget(), PLACES.base, 'voltar à base tem marcador');
+  save.side = {id: 'a-estacao', stage: 'active', n: 0};
+  pin.track = 'side'; assert.equal(questGoal()!.goal, 'Vá até a estação abandonada', 'acompanhando a secundária: o painel mostra ela');
+  pin.track = null;
+  // refazer uma missão: a sequência volta até ela e segue dali; o que já foi entregue não paga de novo, o resto sim
+  const paid0 = save.paid;
+  delete save.paid; save.side = {id: 'o-ultimo-retorno', stage: 'active', n: 0};
+  replay('side', 'o-sinal-perdido');
+  assert.deepEqual([save.side, save.paid], [{id: 'o-sinal-perdido', stage: 'offer', n: 0}, ['o-sinal-perdido', 'a-estacao']]);
+  assert(!talkFor('side') && questNow('side').stage === 'active' && !questTarget('outer') && !questGoal()?.goal.includes('nave'), 'refeita: continua escondida; a nave precisa ser achada de novo');
+  const c1 = save.credits;
+  talkDone('side'); arrive('outer', pl('nave-elyra').x, pl('nave-elyra').y); talkDone('side'); // a primeira, de novo
+  arrive('silent', pl('estacao-abandonada').x, pl('estacao-abandonada').y); talkDone('side'); arrive('silent', 0, 0);
+  arrive('silent', pl('sistema-central').x, pl('sistema-central').y); talkDone('side'); // esta nunca tinha sido entregue
+  assert.deepEqual([questNow('side').id, save.credits], ['depois-do-silencio', c1 + mission('o-ultimo-retorno')!.reward!.credits!]);
+  replay('side', 'o-ultimo-retorno'); talkDone('side'); arrive('silent', 0, 0); arrive('silent', pl('sistema-central').x, pl('sistema-central').y); talkDone('side');
+  assert.equal(save.credits, c1 + mission('o-ultimo-retorno')!.reward!.credits!, 'refeita: não paga de novo');
+  save.side = {id: '', stage: 'done', n: 0};
+  replay('side', 'nao-existe'); assert.equal(questNow('side').stage, 'done', 'missão de outra sequência ou inexistente: nada muda');
+  assert.deepEqual(parseSave({credits: 0, ship: 'scout', mods: [], paid: ['amostras', 3]})!.paid, ['amostras']);
+  if (paid0) save.paid = paid0; else delete save.paid;
+  arrive('silent', 0, 0); save.quest = keep.quest; save.credits = keep.credits;
+  if (keep.side) save.side = keep.side; else delete save.side;
+}
+
+// robô de reparo: fora da base, o casco só se recupera com ele: sozinho, REPAIR_DELAY s depois do último tiro ou dano, ou
+// na hora, pela barra de atalhos; um tiro ou dano depois disso o interrompe
+{
+  reset();
+  const keep = [...save.mods], hp = () => p.hp / stats().maxHp;
+  assert(START.mods.includes('R0') && MODS.R0.drop, 'toda nave nova vem com o Básico, que não se vende');
+  save.mods.splice(0, save.mods.length, ...keep.filter(k => MODS[k].type !== 'repair'));
+  p.x = p.tx = BASE.x + BASE.r + 60; p.y = p.ty = BASE.y; // fora da zona segura
+  p.hp = stats().maxHp / 2; frames(60); assert.equal(hp(), .5, 'sem robô: nada');
+  save.mods.push('R0'); assert.equal(stats().repair, 15 / stats().maxHp * 100, 'o Básico: vida fixa por segundo');
+  save.mods.pop(); save.mods.push('R2'); assert.equal(stats().repair, MODS.R2.val);
+  p.lastHit = -99; frames(60); // 0,96 s
+  assert(Math.abs(hp() - (.5 + MODS.R2.val / 100 * .96)) < 1e-6, `com robô: ${hp()}`);
+  const h0 = p.hp; p.lastShot = Infinity; frames(30); assert.equal(p.hp, h0, 'em combate: o robô espera'); // "atirou agora", a cada quadro
+  p.lastShot = -99; p.hp = stats().maxHp - 1; frames(60); assert.equal(p.hp, stats().maxHp, 'não passa do máximo');
+  // atirou há pouco: sozinho, espera REPAIR_DELAY s; pela barra, começa na hora; um tiro depois do pedido interrompe
+  const half = stats().maxHp / 2;
+  p.fix = true; frames(1); const t = p.fixAt; // o relógio da simulação não é exportado: o pedido grava o "agora" em fixAt
+  p.fixAt = -99; p.lastHit = -99; p.lastShot = t; p.hp = half; frames(60); // ~1 s depois do tiro
+  assert.equal(p.hp, half, `atirou há ~1 s: ainda esperando os ${REPAIR_DELAY} s`);
+  p.fix = true; frames(60); assert(p.hp > half && p.fixing, 'pela barra: começa na hora');
+  p.lastShot = p.fixAt + .5; const h1 = p.hp; frames(30); assert(p.hp === h1 && !p.fixing, 'atirou depois do pedido: para');
+  // só conserta com a nave parada: andando, pausa; parou, volta
+  p.lastShot = -99; p.hp = stats().maxHp / 2; p.tx = p.x + 400; const h2 = p.hp; frames(20);
+  assert(p.hp === h2 && !p.fixing, 'andando: o conserto pausa');
+  p.tx = p.x; p.ty = p.y; frames(5); assert(p.fixing && p.hp > h2, 'parou: volta a consertar');
+  save.mods.splice(0, save.mods.length, ...keep); reset();
 }
 
 // o bico da nave aponta para o alvo enquanto ela o ataca, mesmo voando para outro lado; sem atacar, aponta para onde vai
@@ -523,16 +658,19 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert(p.fight === 0 && !e.hostile && e.hp === e.t.hp && e.sh === e.t.sh, 'fim do combate: inimigo inteiro de novo');
   const hurt = p.hp = stats().maxHp / 2; frames(30);
   assert(p.hp > hurt * 1.15, 'a salvo, a cura rápida liga');
-  // fora da base a vida não volta, por mais que o jogador espere; o escudo volta
+  // sem robô de reparo, fora da base a vida não volta, por mais que o jogador espere; o escudo volta
+  const mods0 = [...save.mods]; save.mods.splice(0, save.mods.length, ...mods0.filter(k => MODS[k].type !== 'repair'));
   p.x = p.tx = BASE.x + 1200; p.y = p.ty = BASE.y + 1200; p.hp = hurt; p.sh = 0; // fora da base, na faixa dos Drones, que não atacam sozinhos
   for (let i = 0; i < 600; i++) { for (const o of enemies) o.hostile = false; update(.05); if (p.hp < hurt) p.hp = hurt; } // 30 s; se alguém acertar, repõe
   assert.equal(p.hp, hurt, 'fora da base a vida não se recupera');
   assert(p.sh > 0 || stats().maxSh === 0, 'o escudo se recupera em qualquer lugar');
+  save.mods.splice(0, save.mods.length, ...mods0);
   p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp;
   // o chefe não se recupera ao desistir: a luta contra ele é em várias investidas
+  toSilent();
   const b = enemies.find(o => o.t === BOSS)!; b.hp = 1000; b.hostile = true; frames(1);
   assert(!b.hostile && b.hp === 1000);
-  b.hp = BOSS.hp;
+  toHome();
 }
 
 // inimigos não chegam perto da base: nem perseguindo o jogador que está logo fora da zona segura, nem vagando
@@ -566,7 +704,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
 
 // chefe: um só, rondando o ponto dele; destruído, paga a recompensa e só volta depois de BOSS_RESPAWN segundos
 {
-  reset();
+  reset(); toSilent();
   const bosses = () => enemies.filter(e => e.t === BOSS), b = bosses()[0], c0 = save.credits;
   assert.equal(bosses().length, 1);
   assert(Math.hypot(b.x - BOSS_AT.x, b.y - BOSS_AT.y) < 600, 'o chefe se afastou do ponto dele');
@@ -587,36 +725,45 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
     save.mods.push('C2'); assert.equal(stats().boost, 1.2, 'dois chips de dano não somam');
     assert(keys(SHIPS).every(k => SHIPS[k].slots.chip === 1), 'um chip por nave: Multialvo ou Dano, um de cada vez');
     save.mods.length = 0; save.mods.push(...mods0); }
-  p.firing = false; p.target = null; p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; // espera na base, a salvo
+  p.firing = false; p.target = null; p.x = p.tx = S.spawn.x; p.y = p.ty = S.spawn.y; // espera na chegada, entre os Drones Elite (passivos)
   const wait = BOSS_RESPAWN / .05;
-  for (let i = 0; i < wait - 20; i++) update(.05);
+  for (let i = 0; i < wait - 20; i++) { p.hp = 1e9; update(.05); }
   assert.equal(bosses().length, 0);
-  for (let i = 0; i < 40; i++) update(.05);
+  for (let i = 0; i < 40; i++) { p.hp = 1e9; update(.05); }
   assert.equal(bosses().length, 1);
-  p.hp = stats().maxHp; shots.length = 0;
+  shots.length = 0; toHome();
 }
 
 // população por faixas: cada tipo tem a cota dele (mix) e vive na faixa de distância dele, os fracos perto da base;
 // quem morre é reposto por outro do mesmo tipo, na mesma faixa
 {
   reset();
-  const count = (t: typeof ENEMIES[number]) => enemies.filter(e => e.t === t).length, fromBase = (e: {hx: number; hy: number}) => Math.hypot(e.hx - BASE.x, e.hy - BASE.y);
-  assert.deepEqual(ENEMIES.map(count), M.mix, 'a cota de cada tipo');
-  const avg = ENEMIES.map(t => { const l = enemies.filter(e => e.t === t).map(fromBase); return l.reduce((a, b) => a + b, 0) / l.length; });
+  const count = (t: typeof ENEMIES[number]) => enemies.filter(e => e.t === t && !guards.has(e)).length, fromBase = (e: {hx: number; hy: number}) => Math.hypot(e.hx - BASE.x, e.hy - BASE.y);
+  assert.deepEqual(M.enemies.map(count), M.mix, 'a cota de cada tipo');
+  assert(!enemies.some(e => e.t.key === 'dreadnought' || e.t === BOSS), 'no mapa inicial não há Dreadnoughts nem o Leviatã');
+  const avg = M.enemies.map(t => { const l = enemies.filter(e => e.t === t).map(fromBase); return l.reduce((a, b) => a + b, 0) / l.length; });
   for (let i = 1; i < avg.length; i++) assert(avg[i] > avg[i - 1], `tipo ${i} mais longe da base que o ${i - 1}: ${avg.map(Math.round)}`);
-  assert(enemies.filter(e => e.t === ENEMIES[0]).every(e => fromBase(e) < 2300), 'os mais fracos nascem perto da base');
-  assert(enemies.filter(e => e.t.key === 'dreadnought').every(e => fromBase(e) > 5000), 'os Dreadnoughts nascem longe dela');
+  assert(enemies.filter(e => e.t === ENEMIES[0]).every(e => fromBase(e) < 2700), 'os mais fracos nascem perto da base');
   // limpar os fracos perto da base: voltam os mesmos tipos, na mesma faixa
   p.x = p.tx = 3000; p.y = p.ty = 3000;
   for (let i = enemies.length; i--;) if (enemies[i].t === ENEMIES[0]) enemies.splice(i, 1);
   frames(1);
-  assert.deepEqual(ENEMIES.map(count), M.mix, 'os destruídos foram repostos pelo mesmo tipo');
-  assert(enemies.filter(e => e.t === ENEMIES[0]).every(e => fromBase(e) < 2300));
+  assert.deepEqual(M.enemies.map(count), M.mix, 'os destruídos foram repostos pelo mesmo tipo');
+  assert(enemies.filter(e => e.t === ENEMIES[0]).every(e => fromBase(e) < 2700));
+  // Rotas Silenciosas: o mesmo padrão, a partir da chegada pelo portal; Drones Elite perto, Dreadnoughts Prime no fundo
+  toSilent();
+  const fromGate = (e: {hx: number; hy: number}) => Math.hypot(e.hx - S.spawn.x, e.hy - S.spawn.y);
+  assert.deepEqual(S.enemies.map(count), S.mix);
+  const far = S.enemies.map(t => { const l = enemies.filter(e => e.t === t).map(fromGate); return l.reduce((a, b) => a + b, 0) / l.length; });
+  for (let i = 1; i < far.length; i++) assert(far[i] > far[i - 1], `rotas: tipo ${i} mais longe da chegada: ${far.map(Math.round)}`);
+  assert(enemies.filter(e => e.t.key === 'dreadnought').every(e => fromGate(e) > 3000), 'os Dreadnoughts nascem longe da chegada');
+  assert.equal(enemies.filter(e => e.t === BOSS).length, 1, 'o Leviatã mora aqui');
+  toHome();
 }
 // casa: um inimigo forte atraído em direção à base desiste ao se afastar LEASH de casa, se recupera e volta
 {
   reset();
-  const e = enemies.find(o => o.t.name === 'Dreadnought')!, h = {x: e.hx, y: e.hy}, dir = Math.atan2(BASE.y - h.y, BASE.x - h.x);
+  const e = enemies.find(o => o.t.name === 'Raider Elite')!, h = {x: e.hx, y: e.hy}, dir = Math.atan2(BASE.y - h.y, BASE.x - h.x);
   put(e, h.x, h.y); e.hp = e.t.hp / 2; e.hostile = true;
   let far = 0;
   for (let i = 0; i < 4000; i++) { // o jogador foge na direção da base, sempre 350 à frente dele, como isca
@@ -637,7 +784,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
 {
   reset();
   p.x = p.tx = 3000; p.y = p.ty = 2000; p.target = null; shots.length = 0;
-  const old = new Set(enemies.filter(e => e.t !== BOSS).slice(15));
+  const old = new Set([...enemies.filter(e => guards.has(e)), ...enemies.filter(e => e.t !== BOSS && !guards.has(e)).slice(15)]); // guardas não são repostos: ficam fora
   for (let i = enemies.length; i--;) if (enemies[i].t !== BOSS && !old.has(enemies[i])) enemies.splice(i, 1); // 15 destruídos de uma vez
   frames(1);
   const fresh = enemies.filter(e => e.t !== BOSS && !old.has(e));
@@ -682,28 +829,42 @@ for (const k of keys(MAPS)) for (const g of MAPS[k].portals) {
   // o portal de volta, e a limpeza
   travel(T, 300 + PORTAL_R + 30, 300); p.tx = 300; for (let i = 0; i < 200 && world.map === T; i++) frames(1);
   assert.equal(world.map, HOME); assert.deepEqual([p.x, p.y], [3000, 2300]);
-  M.portals.length = 0; delete all.teste;
+  M.portals.pop(); delete all.teste; // só o portal de teste: o portal de verdade do setor fica
   frames(1);
+}
+// Guardas: dois Raiders Elite perto da nave de Elyra, em Outer Space. Guarda destruído não volta enquanto a nave estiver
+// no mapa; ao sair e voltar, sim. E os Drones Elite pelas Rotas Silenciosas.
+{
+  reset();
+  const ship = PLACES['nave-elyra'], posted = () => enemies.filter(e => guards.has(e));
+  assert(ship.map === HOME && M.guards!.every(g => Math.hypot(g.x - ship.x, g.y - ship.y) < 400), 'os guardas ficam perto da nave, no mapa inicial');
+  toSilent(); assert.equal(enemies.filter(e => e.t === DRONE_ELITE).length, S.mix![0], 'Drones Elite nas Rotas Silenciosas');
+  toHome();
+  assert(posted().length === 2 && posted().every(e => e.t === ENEMIES[3]), 'dois Raiders Elite de guarda');
+  enemies.splice(enemies.indexOf(posted()[0]), 1); frames(1);
+  assert.equal(posted().length, 1, 'guarda destruído não volta na hora');
+  toSilent(); toHome();
+  assert.equal(posted().length, 2, 'voltou ao mapa: os dois de novo');
 }
 
 // retomada: o progresso guarda onde a nave estava e como estava, e a hora de cada chefe voltar; recarregar a página
 // (resume) não cura, não leva para a base e não ressuscita o chefe antes da hora
 {
-  reset();
-  const boss0 = save.boss, isBoss = () => enemies.some(e => e.t === BOSS);
+  reset(); toSilent();
+  const boss0 = save.boss, isBoss = () => enemies.some(e => e.t === BOSS), crowd = S.population + (S.guards?.length ?? 0);
   p.x = p.tx = 4321; p.y = p.ty = 1234; p.hp = 77; p.sh = 5; persist();
-  assert.deepEqual(save.pos, {map: HOME, x: 4321, y: 1234, hp: 77, sh: 5}, 'todo salvamento leva a posição e o estado da nave');
+  assert.deepEqual(save.pos, {map: 'silent', x: 4321, y: 1234, hp: 77, sh: 5}, 'todo salvamento leva a posição e o estado da nave');
   assert.deepEqual(parseSave(JSON.parse(JSON.stringify(save)))!.pos, save.pos, 'e isso sobrevive a ser gravado e lido');
   assert.equal(parseSave({credits: 0, ship: 'scout', mods: [], pos: {map: 'mapa-que-nao-existe', x: 1, y: 1, hp: 1, sh: 1}})!.pos, undefined);
-  save.boss = {[HOME]: Date.now() + 60_000}; // chefe destruído há pouco: só volta daqui a um minuto
-  p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; // "recarrega a página": a nave começaria na base, inteira
+  save.boss = {silent: Date.now() + 60_000}; // chefe destruído há pouco: só volta daqui a um minuto
+  travel(HOME, BASE.x, BASE.y); p.hp = stats().maxHp; // "recarrega a página": a nave começaria na base, inteira
   resume();
-  assert.deepEqual([p.x, p.y, p.hp, p.sh, world.map], [4321, 1234, 77, 5, HOME], 'volta ao ponto, com a vida e o escudo que tinha');
-  frames(5);
-  assert(!isBoss() && enemies.length === POPULATION, 'o chefe continua fora até a hora dele');
-  save.boss = {[HOME]: Date.now() - 1}; resume(); frames(1);
+  assert.deepEqual([p.x, p.y, p.hp, p.sh, world.map], [4321, 1234, 77, 5, 'silent'], 'volta ao mapa e ao ponto, com a vida e o escudo que tinha');
+  for (let i = 0; i < 5; i++) { p.hp = 77; frames(1); }
+  assert(!isBoss() && enemies.length === crowd, 'o chefe continua fora até a hora dele');
+  save.boss = {silent: Date.now() - 1}; resume(); frames(1);
   assert(isBoss(), 'passada a hora, ele volta');
-  save.boss = boss0; p.x = p.tx = BASE.x; p.y = p.ty = BASE.y; p.hp = stats().maxHp; p.sh = stats().maxSh;
+  save.boss = boss0; toHome(); persist();
 }
 
 // partículas nascem e somem
@@ -727,7 +888,7 @@ for (const k of keys(MAPS)) for (const g of MAPS[k].portals) {
 }
 
 // minimapa: cabe o mapa inteiro, na mesma proporção, encostado no canto inferior direito da tela (1280x720 no teste)
-{ const m = minimap(); assert.deepEqual([m.w, m.h, m.x, m.y], [180, 120, 1088, 588]); assert.equal(m.k * W, 180); }
+{ const m = minimap(), w = 260, k = w / W, h = M.h * k; assert.deepEqual([m.w, m.h, m.x, m.y], [w, h, view.w - w - 12, view.h - h - 12]); assert.equal(m.k, k); }
 
 // 3D: a câmera do three.js projeta igual à conta 2D do jogo (senão naves e anéis/barras desalinham)
 {
@@ -790,7 +951,7 @@ for (const k of keys(MAPS)) for (const g of MAPS[k].portals) {
 }
 // todo .glb da biblioteca abre e encaixa: naves medindo 2; armas com .46 de cano, para a frente e em pé;
 // escudos e motores (só ícones) com .2 de lado e em pé
-const FOLDERS = {ships: 'ship', weapons: 'weapon', shields: 'module', engines: 'module', aim: 'module', missiles: 'module', chips: 'module', asteroids: 'rock', bases: 'base'} as const;
+const FOLDERS = {ships: 'ship', weapons: 'weapon', shields: 'module', engines: 'module', aim: 'module', missiles: 'module', chips: 'module', pets: 'ship', asteroids: 'rock', bases: 'base'} as const;
 // fora do navegador não há como decodificar imagens: um substituto basta para os modelos com textura abrirem
 Object.assign(globalThis, {self: globalThis, createImageBitmap: async () => ({width: 1, height: 1, close() {}})});
 for (const dir of keys(FOLDERS)) for (const f of readdirSync(`public/models/${dir}`).filter(f => f.endsWith('.glb'))) {
@@ -803,7 +964,7 @@ for (const dir of keys(FOLDERS)) for (const f of readdirSync(`public/models/${di
   // acabamento: as naves do jogador vêm com o material completo (relevo/metal); todo o resto é fosco, mais leve
   const rich = object.children.some(n => ((n as THREE.Mesh).material as THREE.Material).type === 'MeshStandardMaterial');
   assert.equal(rich, dir === 'ships' && Object.hasOwn(SHIPS, f.replace('.glb', '')), `${f}: material ${rich ? 'completo' : 'fosco'} no lugar errado`);
-  if (dir === 'ships' || dir === 'bases') assert(Math.abs(Math.max(s.x, s.z) - 2) < 1e-6 && s.y < 2, f);
+  if (dir === 'ships' || dir === 'bases' || dir === 'pets') assert(Math.abs(Math.max(s.x, s.z) - 2) < 1e-6 && s.y < 2, f);
   else if (dir === 'asteroids') assert(Math.abs(Math.max(s.x, s.y, s.z) - 2) < 1e-6, f);
   else if (dir === 'weapons') assert(Math.abs(s.x - .46) < 1e-6 && b.max.x > -b.min.x && b.max.y > -b.min.y && s.y < s.x, f);
   else assert(Math.abs(Math.max(s.x, s.z) - .2) < 1e-6 && b.max.y > -b.min.y, f);

@@ -1,12 +1,12 @@
 // Ponto de entrada: ajusta o tamanho da tela, carrega o que o mapa precisa (tela de carregamento) e roda o loop
 // entrada -> simulação -> desenho.
 import { view, world, map } from './game/state.ts';
-import { SHIPS, MODS, MODEL_DIR, ORES } from './game/data.ts';
+import { SHIPS, MODS, MODEL_DIR, ORES, MAPS } from './game/data.ts';
 import { keys } from './game/util.ts';
 import { pathOf, preload } from './view/ships3d.ts';
 import { applyInput } from './ui/input.ts';
 import { update, resume } from './game/sim.ts';
-import { draw, preloadImages, IMAGES } from './view/render.ts';
+import { draw, preloadImages, IMAGES, PET_MODEL } from './view/render.ts';
 import { ui } from './view/camera.ts';
 import { syncHotbar } from './ui/hotbar.ts';
 import { playEvents, preloadSounds } from './view/audio.ts';
@@ -63,10 +63,10 @@ let frames = 0, since = 0;
 // partida nem na primeira vez que o hangar é aberto. Se a rede travar, o jogo abre mesmo assim após WAIT segundos, e o
 // que faltar entra quando chegar (até lá aparece o casco genérico).
 const WAIT = 90;
-const m0 = map();
-const models = [...new Set([...(m0.base ? [pathOf('station')] : []), ...keys(SHIPS).map(k => pathOf(k)), ...m0.enemies.map(e => pathOf(e.key)),
-                            ...(m0.boss ? [pathOf(m0.boss.def.key)] : []), ...m0.ores.map(o => 'asteroids/' + ORES[o].model),
-                            ...keys(MODS).flatMap(k => MODS[k].model ? [`${MODEL_DIR[MODS[k].type]}/${MODS[k].model}`] : [])])];
+const all = Object.values(MAPS); // de todos os mapas: passar por um portal não mostra nada aparecendo aos poucos
+const models = [...new Set([pathOf('station'), ...keys(SHIPS).map(k => pathOf(k)), ...all.flatMap(m => m.enemies.map(e => pathOf(e.key))),
+                            ...all.flatMap(m => [...(m.boss ? [pathOf(m.boss.def.key)] : []), ...(m.guards ?? []).map(g => pathOf(g.def.key)), ...m.ores.map(o => 'asteroids/' + ORES[o].model)]),
+                            ...keys(MODS).flatMap(k => MODS[k].model ? [`${MODEL_DIR[MODS[k].type]}/${MODS[k].model}`] : []), PET_MODEL])];
 const screen = document.getElementById('loading'), total = models.length + IMAGES + 1; // + 1 = os sons, contados juntos
 let done = 0;
 const tick = () => {
@@ -75,7 +75,7 @@ const tick = () => {
   screen.querySelector<HTMLElement>('i')!.style.width = `${done / total * 100}%`;
   screen.querySelector('p')!.textContent = `Carregando ${done} de ${total}`;
 };
-const assets = Promise.race([Promise.all([preload(models, tick), preloadImages(m0.bg, tick), preloadSounds().then(tick)]), new Promise(ok => setTimeout(ok, WAIT * 1000))]);
+const assets = Promise.race([Promise.all([preload(models, tick), preloadImages(tick), preloadSounds().then(tick)]), new Promise(ok => setTimeout(ok, WAIT * 1000))]);
 await enter(screen); // conta do piloto: entra, cria ou segue sem conta, enquanto os arquivos carregam por trás
 resume(); // a nave volta para onde estava, e chefe destruído continua destruído até a hora dele
 await assets;

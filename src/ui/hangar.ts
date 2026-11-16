@@ -24,6 +24,7 @@ const I = {
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   ship: 'M12 2l2.5 7 7.5 5-7 1.5L12 22l-3-6.5L2 14l7.5-5z',
   chip: 'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
+  repair: 'M14 6a4 4 0 0 0 5 5l-9 9a2 2 0 0 1-3-3l9-9a4 4 0 0 0-2-2zM7 4l3 3-2 2-3-3',
   left: 'M15 4l-8 8 8 8',
   right: 'M9 4l8 8-8 8',
   slots: 'M4 5h16v14H4zM4 12h16M12 5v14',
@@ -39,9 +40,9 @@ const I = {
   box: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8',
 };
 const svg = (d: string) => `<svg viewBox="0 0 24 24"><path d="${d}"/></svg>`;
-const ICON: Record<ModType, string> = {laser: I.laser, shield: I.shield, engine: I.engine, aim: I.target, missile: I.missile, mining: I.mining, chip: I.chip};
+const ICON: Record<ModType, string> = {laser: I.laser, shield: I.shield, engine: I.engine, aim: I.target, missile: I.missile, mining: I.mining, chip: I.chip, repair: I.repair};
 // ícone de um módulo: a foto do modelo 3D dele; enquanto o .glb não carrega (ou se não existe), o desenho do tipo
-const pic = (k: ModKey) => { const m = MODS[k], u = m.model && iconOf(`${MODEL_DIR[m.type]}/${m.model}`); return u ? `<img src="${u}" alt="">` : svg(ICON[m.type]); };
+const pic = (k: ModKey) => { const m = MODS[k], u = m.model && iconOf(`${MODEL_DIR[m.type]}/${m.model}`, false, 256, m.bots); return u ? `<img src="${u}" alt="">` : svg(ICON[m.type]); };
 
 // teto das barras: o máximo que qualquer nave alcança com os melhores módulos
 const best = (t: ModType) => Math.max(...keys(MODS).filter(k => MODS[k].type === t).map(k => MODS[k].val));
@@ -58,7 +59,7 @@ let cat: ModType = 'laser', pick: ModKey = 'L1'; // aba Loja: categoria aberta e
 type From = 'mods' | 'inv';
 let sel: { from: From; i: number } | null = null;
 let lastClick = {key: '', t: 0}; // para reconhecer o duplo clique mesmo com a tela sendo redesenhada entre os dois
-const TYPE_NAME: Record<ModType, string> = {laser: 'Arma', shield: 'Gerador de escudo', engine: 'Motor', aim: 'Computador de mira', missile: 'Míssil', mining: 'Módulo de mineração', chip: 'Chip'};
+const TYPE_NAME: Record<ModType, string> = {laser: 'Arma', shield: 'Gerador de escudo', engine: 'Motor', aim: 'Computador de mira', missile: 'Míssil', mining: 'Módulo de mineração', chip: 'Chip', repair: 'Robô de reparo'};
 
 // motivo para desligar tudo que mexe no equipamento ou nos créditos: vazio na base, preenchido fora dela.
 // É só o aviso na tela: quem barra de verdade são as regras em state.ts.

@@ -2,14 +2,18 @@
 // Tudo aqui é canvas 2D, menos as naves: elas são desenhadas em 3D por ships3d.ts e copiadas para cá.
 import { ENEMY_MISSILE, RANGE, STATION_R, PORTAL_R, MISSILE_R, MINE_RANGE, MAPS, MODS, MODEL_DIR, ORES } from '../game/data.ts';
 import type { Shot } from '../game/state.ts';
-import { save, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, view, map } from '../game/state.ts';
+import { world, save, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, view, map } from '../game/state.ts';
 import type { Stats } from '../game/state.ts';
-import { clamp } from '../game/util.ts';
+import { clamp, dist } from '../game/util.ts';
 import type { Point } from '../game/util.ts';
 import { TILT, COSV, onScreen, minimap, ui } from './camera.ts';
 import { SCALE } from '../game/models.ts';
 import { createStage, hasModel } from './ships3d.ts';
-import { needsTalk } from '../game/missions.ts';
+import { needsTalk, scenery, questTarget, questPlace, coords } from '../game/missions.ts';
+import type { Prop } from '../game/missions.ts';
+// objetos de cenário das missões: um objeto fixo por id, para a camada 3D reaproveitar o mesmo modelo entre quadros
+const propIds = new Map<string, object>();
+const propId = (pr: Prop) => { let o = propIds.get(pr.id); if (!o) propIds.set(pr.id, o = {}); return o; };
 
 // ---------- efeitos com imagens: public/fx/<nome>.png, do Particle Pack do Kenney ----------
 // As imagens são brancas com transparência; cada uma é tingida uma vez por cor usada e guardada. Desenhe com a mistura
@@ -38,26 +42,52 @@ const flashes: Flash[] = [];
 
 // míssil em voo: o modelo 3D do próprio item (o mesmo do ícone). Os inimigos usam sempre este:
 const ENEMY_MISSILE_MODEL = 'missiles/missil2';
+// Robô de reparo: enquanto ele conserta (p.fixing), os drones (ModDef.bots: 1, 2 ou 3, conforme o robô equipado) saem
+// de dentro da nave, rondam o casco em roda e lançam nele feixes amarelos de solda, que espirram faíscas no ponto de
+// contato; quando o conserto acaba, voltam e somem dentro dela. É só desenho: o conserto em si é da simulação (sim.ts).
+export const PET_MODEL = 'pets/drone';
+const PET = {r: 7, h: 34, out: 2.6, turn: .9}; // tamanho, altura do voo, raio da ronda (em raios da nave), voltas por s em radianos
+const pet = {on: 0, t: 0, last: 0, n: 1}; // on: 0 = recolhidos na nave, 1 = fora, rondando; n = quantos drones
+const pets = [0, 1, 2].map(() => ({x: 0, y: 0, a: 0})); // posição de cada drone (o objeto também serve de id no palco 3D)
+const WELD = '#ffd23a';
+/** faíscas da solda, já na tela (x, y com a inclinação aplicada): riscos curtos que espirram e caem */
+const sparks: { x: number; y: number; vx: number; vy: number; t: number }[] = [];
+function petStep(r: number) {
+  const ms = performance.now(), dt = Math.min(.1, (ms - (pet.last || ms)) / 1000); pet.last = ms;
+  pet.on = clamp(pet.on + (p.fixing ? 1.5 : -2) * dt, 0, 1); // sai em ~0,7 s, volta em 0,5 s
+  for (let i = sparks.length; i--;) { const s = sparks[i]; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 260 * dt; if ((s.t -= dt) <= 0) sparks.splice(i, 1); }
+  const k = save.mods.find(m => MODS[m].type === 'repair');
+  if (p.fixing && k) pet.n = MODS[k].bots ?? 1; // enquanto voltam, ficam os que saíram
+  if (pet.on <= 0) { pet.t = 0; return []; }
+  pet.t += dt;
+  const d = r * PET.out * pet.on;
+  return pets.slice(0, pet.n).map((o, i) => { // saem por trás da nave e rondam em roda, igualmente espaçados
+    const ang = p.a + Math.PI + pet.t * PET.turn + i / pet.n * 6.2832;
+    o.x = p.x + Math.cos(ang) * d; o.y = p.y + Math.sin(ang) * d;
+    o.a = Math.atan2(p.y - o.y, p.x - o.x); // de frente para o casco
+    return o;
+  });
+}
 const missileModel = (q: Shot) => q.missile && q.mod && MODS[q.mod].model ? `${MODEL_DIR.missile}/${MODS[q.mod].model}` : undefined;
 
 const ctx = (document.getElementById('c') as HTMLCanvasElement).getContext('2d')!;
 const stage = createStage(); // canvas WebGL das naves
 const cv3w = () => Math.round(view.w * view.dpr), cv3h = () => Math.round(view.h * view.dpr); // a camada 3D, em pixels reais
-// Inimigos que já passaram pela tela: só esses aparecem no minimapa, até serem destruídos. É memória do desenho, não
-// estado do jogo (quem renasce é outro inimigo e volta a ficar oculto).
-const seen = new WeakSet<object>();
+/** inimigos aparecem no minimapa só dentro deste raio em volta da nave (o radar); mais longe, somem dele */
+const RADAR = 1600;
 // Fundo do mapa: fica "infinitamente longe", então não é inclinado e anda a só PARALLAX da câmera.
 // uma imagem por arquivo de fundo, carregada na primeira vez que o mapa é desenhado
 const bgs = new Map<string, HTMLImageElement>();
 const bgOf = (file: string) => { let i = bgs.get(file); if (!i) { i = new Image(); i.src = 'bg/' + file; bgs.set(file, i); } return i; };
 /** Carrega de antemão as imagens do desenho (fundo do mapa e efeitos), para nada aparecer aos poucos; tick a cada uma. */
-export function preloadImages(bg: string, tick?: () => void) {
+export function preloadImages(tick?: () => void) {
   const wait = (i: HTMLImageElement) => new Promise<void>(ok => { if (i.complete) ok(); else i.onload = i.onerror = () => ok(); }).then(tick);
   const faces = ['huedro', 'fabricio'].map(n => { const i = new Image(); i.src = `characters/${n}.jpg`; return i; }); // retratos das conversas
-  return Promise.all([wait(bgOf(bg)), ...faces.map(wait), ...FX.map(name => { fx(name, '#ffffff'); return wait(fxImg.get(name)!); })]);
+  // o fundo de todos os mapas: trocar de mapa não espera nada
+  return Promise.all([...Object.values(MAPS).map(m => wait(bgOf(m.bg))), ...faces.map(wait), ...FX.map(name => { fx(name, '#ffffff'); return wait(fxImg.get(name)!); })]);
 }
 /** quantas imagens preloadImages carrega */
-export const IMAGES = 3 + FX.length;
+export const IMAGES = Object.keys(MAPS).length + 2 + FX.length;
 const PARALLAX = .08;
 const stars = Array.from({length: 250}, () => ({x: Math.random(), y: Math.random(), d: .1 + Math.random() * .5}));
 
@@ -211,24 +241,48 @@ export function draw() {
     ctx.setLineDash([]);
   }
   const vis = enemies.filter(e => onScreen(e, Math.max(60, e.t.r * 2)));
-  for (const e of vis) seen.add(e);
   // asteroides na tela: giram devagar (só no desenho); o escolhido para minerar ganha um anel na cor do minério
   const stones = rocks.filter(k => onScreen(k, k.r * 2)), spin = performance.now() / 9000;
   for (const k of stones) {
-    seen.add(k);
     const model = 'asteroids/' + ORES[k.ore].model;
     if (!hasModel(model)) { ctx.fillStyle = '#556'; ctx.beginPath(); ctx.ellipse(k.x, k.y * TILT, k.r * SCALE, k.r * SCALE * .8, 0, 0, 7); ctx.fill(); } // até o .glb chegar
     if (k === p.mining) { ctx.strokeStyle = ORES[k.ore].color; ring(k, k.r * SCALE + 10); ctx.stroke(); }
   }
+  const props = scenery().filter(pr => pr.map === world.map && onScreen(pr, pr.r * 3)), tnow = performance.now() / 60000;
+  const out = petStep(st.r);
+  // alvo de missão (ir até um lugar): um anel tracejado no chão, girando devagar
+  const target = questTarget(world.map); // noutro mapa: o portal que leva até lá
+  if (target) { ctx.strokeStyle = '#ffd45a'; ctx.setLineDash([10, 8]); ctx.lineDashOffset = -performance.now() / 40; ring(target, target.r); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0; }
   stage.render([...(BASE ? [{id: BASE, o: {x: BASE.x, y: BASE.y, a: 0}, r: STATION_R, key: 'station' as const}] : []), // a estação da base, parada
                 ...vis.map(e => ({id: e, o: e, r: e.t.r, key: e.t.key})),
                 ...stones.map(k => ({id: k, o: {x: k.x, y: k.y, a: k.a + spin}, r: k.r, model: 'asteroids/' + ORES[k.ore].model})),
                 {id: p, o: p, r: st.r, key: save.ship},
+                ...out.map(o => ({id: o, o, r: PET.r * (.3 + .7 * pet.on), model: PET_MODEL, h: PET.h * pet.on})),
+                ...props.map(pr => ({id: propId(pr), o: {x: pr.x, y: pr.y, a: pr.a + tnow * pr.spin * 6.2832}, r: pr.r, model: pr.model})),
                 ...strikes.filter(s => s.live && onScreen(s)).map(s => ({id: s, o: {x: s.x, y: s.y, a: s.a}, r: MISSILE_R, model: ENEMY_MISSILE_MODEL, h: 10})),
                 ...shots.flatMap(q => { const model = q.live && onScreen(q) && missileModel(q); return model ? [{id: q, o: q, r: MISSILE_R, model, h: q.h}] : []; })],
                p, cw / z, ch / z, cv3w(), cv3h());
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(stage.canvas, 0, 0); ctx.restore(); // pixel a pixel, sem escala
   drawParts(false); // explosões e as chamas de quem não está de costas para a câmera: por cima das naves
+  // O feixe de cada drone: da frente dele a um ponto que percorre o casco, de ponta a ponta no comprimento da nave e de
+  // um lado ao outro na largura, cada drone num ritmo e numa fase próprios. As faíscas saem só de onde o feixe toca.
+  if (p.fixing && pet.on > .8) out.forEach((o, i) => {
+    const t = performance.now() / 1000, sx = o.x + Math.cos(o.a) * PET.r * 1.2, sy = o.y * TILT - PET.h * COSV + Math.sin(o.a) * PET.r * 1.2 * TILT;
+    const along = Math.sin(t * (.9 + .23 * i) + i * 2.1) * st.r * 1.1, across = Math.sin(t * (2.3 + .4 * i) + i * 4.2) * st.r * .45;
+    const hx = p.x + Math.cos(p.a) * along - Math.sin(p.a) * across, hy = (p.y + Math.sin(p.a) * along + Math.cos(p.a) * across) * TILT - 6;
+    ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = WELD; ctx.lineCap = 'round';
+    for (const [w, a] of [[6, .2], [2, .85]]) { ctx.lineWidth = w; ctx.globalAlpha = a * (.75 + .25 * Math.sin(t * 20)); ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(hx, hy); ctx.stroke(); }
+    const dot = fx('circle_05', WELD), star = fx('star_08', '#ffffff');
+    if (dot) { stamp(dot, hx, hy, 26 + 8 * Math.sin(t * 15), 0, .9); stamp(dot, sx, sy, 12, 0, .7); }
+    if (star) stamp(star, hx, hy, 18 + 10 * Math.random(), Math.random() * 6.28, .9); // clarão da solda, piscando
+    if (Math.random() < .15) { const a = Math.random() * 6.28, v = 60 + Math.random() * 90; sparks.push({x: hx, y: hy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, t: .15 + Math.random() * .2}); } // poucas: ~9 por segundo
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.lineWidth = 2;
+  });
+  if (sparks.length) { // as faíscas continuam caindo um pouco depois de o feixe desligar
+    ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round'; ctx.lineWidth = 1.6;
+    for (const s of sparks) { ctx.strokeStyle = s.t > .2 ? '#fff3b0' : WELD; ctx.globalAlpha = Math.min(1, s.t * 4); ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * .03, s.y - s.vy * .03); ctx.stroke(); }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.lineWidth = 2;
+  }
   shield(st, performance.now() / 1000);
   for (const e of vis) { // embaixo de cada inimigo: escudo, vida e nome
     const ly = e.y * TILT + e.t.r + 10;
@@ -246,6 +300,7 @@ export function draw() {
   }
   // asteroides: nome do minério e quanto resta; feixe de mineração, tremido, da nave até o asteroide
   ctx.font = nameFont;
+  for (const pr of props) { ctx.fillStyle = '#9fb6cc'; ctx.fillText(pr.label, pr.x, pr.y * TILT + pr.r * SCALE + 4 + nameGap); } // cenário das missões, em cinza frio
   for (const k of stones) { // quando o minerador equipado não alcança o minério, o nome diz qual é preciso
     const o = ORES[k.ore], need = st.mineLevel < o.level ? ` · exige Mk${o.level}` : '';
     ctx.fillStyle = o.color; ctx.fillText(`${o.name} ${Math.ceil(k.left)}${need}`, k.x, k.y * TILT + k.r * SCALE + 4 + nameGap);
@@ -315,7 +370,7 @@ export function draw() {
   const u = ui.scale, mm = minimap();
   ctx.save(); ctx.scale(u, u);
   ctx.textAlign = 'left'; ctx.fillStyle = '#789'; ctx.font = '12px monospace';
-  ['Clique: mover / travar alvo / minerar', 'Roda do mouse: zoom   + e -: tamanho da interface', '1 ou ESPAÇO: canhões   2: mísseis   T: mira automática', 'B: inventário   F: fps']
+  ['Clique: mover / travar alvo / minerar', 'Roda do mouse: zoom   + e -: tamanho da interface', '1 ou ESPAÇO: canhões   2: mísseis   T: mira automática', 'B: inventário   J: missões   F: fps']
     .forEach((line, i, all) => ctx.fillText(line, 12, ch / u - 12 - (all.length - 1 - i) * 16)); // canto inferior esquerdo, em linhas curtas
   ctx.restore();
   ctx.font = '14px monospace';
@@ -323,18 +378,43 @@ export function draw() {
   ctx.save(); ctx.translate(mm.x, mm.y); ctx.scale(u, u);
   const ox = 0, oy = 0, mw = mm.w / u, mh = mm.h / u, mk = mm.k / u; // mk = escala mundo -> minimapa
   ctx.fillStyle = 'rgba(10,20,40,.8)'; ctx.fillRect(ox, oy, mw, mh); ctx.strokeStyle = '#357'; ctx.strokeRect(ox, oy, mw, mh);
+  // grade de coordenadas: uma linha a cada 1.000, com o valor a cada 3.000 nas bordas de cima (X) e da esquerda (Y)
+  ctx.strokeStyle = '#ffffff0f'; ctx.lineWidth = 1; ctx.beginPath();
+  for (let x = 1000; x < m.w; x += 1000) { ctx.moveTo(ox + x * mk, oy); ctx.lineTo(ox + x * mk, oy + mh); }
+  for (let y = 1000; y < m.h; y += 1000) { ctx.moveTo(ox, oy + y * mk); ctx.lineTo(ox + mw, oy + y * mk); }
+  ctx.stroke(); ctx.lineWidth = 2;
+  ctx.font = '9px monospace'; ctx.fillStyle = '#4a6a88'; ctx.textAlign = 'center';
+  for (let x = 3000; x < m.w; x += 3000) ctx.fillText(String(x), ox + x * mk, oy + 10);
+  ctx.textAlign = 'left'; for (let y = 3000; y < m.h; y += 3000) ctx.fillText(String(y), ox + 2, oy + y * mk + 3);
+  // acima do minimapa: onde a nave está e, com um objetivo de lugar, as coordenadas dele
+  ctx.font = '12px monospace'; ctx.fillStyle = '#9fb6cc'; ctx.fillText(`X ${Math.round(p.x)} · Y ${Math.round(p.y)}`, ox, oy - 8);
+  const dest = questPlace();
+  if (dest) { ctx.textAlign = 'right'; ctx.fillStyle = '#ffd45a'; ctx.fillText(`Alvo: ${coords(dest)}`, ox + mw, oy - 24); }
+  ctx.textAlign = 'left'; ctx.font = '14px monospace';
   if (BASE) { ctx.fillStyle = '#2a6'; ctx.fillRect(ox + BASE.x * mk - 3, oy + BASE.y * mk - 3, 6, 6); }
-  for (const k of rocks) if (seen.has(k)) { ctx.fillStyle = ORES[k.ore].color; ctx.fillRect(ox + k.x * mk - 1, oy + k.y * mk - 1, 3, 3); } // asteroides já vistos
   ctx.fillStyle = '#ff8a1e'; for (const d of drops) ctx.fillRect(ox + d.x * mk - 2, oy + d.y * mk - 2, 5, 5); // espólio
   // porão, acima do minimapa: aparece quando há minerador ou carga
   const used = cargoUsed();
   if (st.mine || used >= 1) { ctx.fillStyle = used >= st.cargo - 1e-9 ? '#fa4' : '#9fc'; ctx.textAlign = 'right'; ctx.font = '12px monospace'; ctx.fillText(`Porão ${Math.floor(used)}/${st.cargo}`, ox + mw, oy - 8); ctx.textAlign = 'left'; ctx.font = '14px monospace'; }
   ctx.fillStyle = '#b98cff'; for (const g of m.portals) ctx.fillRect(ox + g.x * mk - 2, oy + g.y * mk - 2, 5, 5);
-  for (const e of enemies) if (seen.has(e)) { ctx.fillStyle = e.t.color; const s = e.t.r > 50 ? 3 : 1; ctx.fillRect(ox + e.x * mk - s, oy + e.y * mk - s, s * 2, s * 2); } // o chefe aparece maior
+  for (const e of enemies) if (dist(e, p) <= RADAR) { ctx.fillStyle = e.t.color; const s = e.t.r > 50 ? 3 : 1; ctx.fillRect(ox + e.x * mk - s, oy + e.y * mk - s, s * 2, s * 2); } // o chefe aparece maior
   if (Math.hypot(p.tx - p.x, p.ty - p.y) > 40) { // rota até o destino (clique no mundo ou no próprio minimapa)
     ctx.strokeStyle = '#ffffff66'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(ox + p.x * mk, oy + p.y * mk); ctx.lineTo(ox + p.tx * mk, oy + p.ty * mk); ctx.stroke();
     ctx.strokeRect(ox + p.tx * mk - 2, oy + p.ty * mk - 2, 4, 4); ctx.lineWidth = 2;
   }
   ctx.fillStyle = '#fff'; ctx.fillRect(ox + p.x * mk - 2, oy + p.y * mk - 2, 4, 4);
+  if (target) { // alvo de missão no minimapa: um losango amarelo que pulsa
+    const s = 4 + Math.sin(performance.now() / 200) * 1.5, tx = ox + target.x * mk, ty = oy + target.y * mk;
+    ctx.fillStyle = '#ffd45a'; ctx.beginPath(); ctx.moveTo(tx, ty - s); ctx.lineTo(tx + s, ty); ctx.lineTo(tx, ty + s); ctx.lineTo(tx - s, ty); ctx.closePath(); ctx.fill();
+  }
   ctx.restore();
+  // alvo de missão fora da tela: uma seta na borda, apontando para ele, com a distância
+  if (target && !onScreen(target, -40)) {
+    const dx = (target.x - p.x) * z, dy = (target.y - p.y) * TILT * z, a = Math.atan2(dy, dx), u = ui.scale;
+    const k = Math.min((cw / 2 - 40 * u) / Math.abs(Math.cos(a) || 1e-9), (ch / 2 - 60 * u) / Math.abs(Math.sin(a) || 1e-9));
+    ctx.save(); ctx.translate(cw / 2 + Math.cos(a) * k, ch / 2 + Math.sin(a) * k); ctx.scale(u, u);
+    ctx.fillStyle = '#ffd45a'; ctx.save(); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, -10); ctx.lineTo(-3, 0); ctx.lineTo(-8, 10); ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.font = '12px monospace'; ctx.textAlign = 'center'; ctx.fillText(Math.round(Math.hypot(target.x - p.x, target.y - p.y)) + 'm', -Math.cos(a) * 24, -Math.sin(a) * 24 + 4);
+    ctx.restore();
+  }
 }

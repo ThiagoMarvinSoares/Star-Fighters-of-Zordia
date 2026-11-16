@@ -91,6 +91,11 @@ function noise(a: AudioContext, f0: number, f1: number, dur: number, vol: number
 
 // Sons de interface do hangar, sintetizados e baixos: duas notas suaves e curtas.
 // Comprar = notas subindo (confirmação); vender = duas notas agudas rápidas (moeda caindo).
+/** chiado de rádio: transmissões e registros das missões */
+export function radio(vol = .12) {
+  if (!ac || ac.state !== 'running') return;
+  noise(ac, 2600, 900, .35, vol, 0); noise(ac, 1400, 600, .12, vol * .7, 0);
+}
 export function ui(kind: 'buy' | 'sell') {
   if (!ac || ac.state !== 'running') return;
   const notes = kind === 'buy' ? [523, 784] : [1319, 1760], gap = kind === 'buy' ? .09 : .06;

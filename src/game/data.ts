@@ -16,6 +16,9 @@ export const KEEP_MARGIN = 250;
 /** Segundos "em combate" depois de o jogador atirar ou levar dano. Enquanto dura, a zona segura da base não o protege
  *  (os inimigos seguem atirando e a cura rápida não liga): entrar na base no meio da luta não salva ninguém. */
 export const COMBAT = 10;
+/** O robô de reparo começa sozinho depois destes segundos sem atirar nem levar dano; ou na hora, pela barra de atalhos.
+ *  Nos dois casos, atirar ou levar dano interrompe o conserto. */
+export const REPAIR_DELAY = 4;
 /** Mísseis inimigos (EnemyDef.missile). Não são teleguiados: o inimigo mira onde o jogador está, um risco vermelho mostra
  *  a linha por warn segundos e então o míssil sai reto por ela, rápido, até o fim do risco. Quem sai da linha a tempo
  *  escapa. cd = segundos entre mísseis de um mesmo inimigo; mult = dano em relação a uma salva de lasers dele; reach =
@@ -38,9 +41,9 @@ export const LEASH = 1300;
 /** inimigos não renascem a menos disto do jogador: a área que ele limpou fica vazia enquanto ele estiver nela */
 export const CLEAR = 1400;
 
-export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip';
+export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip' | 'repair';
 export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor';
-export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1' | 'C2';
+export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1' | 'C2' | 'R0' | 'R1' | 'R2' | 'R3';
 export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss';
 /** Toda nave ou inimigo precisa de um modelo 3D e pontos de tiro com esta chave em models.ts. */
 export type ModelKey = ShipKey | EnemyKey | 'station';
@@ -68,6 +71,10 @@ export interface ModDef {
   effect?: string;
   /** não está à venda: só se consegue como espólio (o preço serve só para a revenda) */
   drop?: boolean;
+  /** robô de reparo: val é vida por segundo, fixa, em vez de % do casco (rende igual em qualquer nave) */
+  flat?: boolean;
+  /** robô de reparo: quantos drones saem para consertar (e aparecem no ícone); padrão 1 */
+  bots?: number;
 }
 export interface EnemyDef {
   key: EnemyKey; name: string;
@@ -96,13 +103,13 @@ export interface EnemyDef {
 // Ideia da progressão: sempre há algo que dá para comprar em poucos minutos. Cada item custa de 2 a 7 minutos da renda
 // de quem está naquele estágio, e cada degrau de inimigo paga cerca de 2x o anterior. Mk1 é da era do Scout, Mk2 da
 // Corvette, Mk3 do Cruiser. Ao mexer nos números, confira a espera entre compras (o teste mede a maior delas).
-export const START = {credits: 300, ship: 'scout', mods: ['L1', 'L1', 'S1']} as const; // sobra um slot de arma: a 1ª compra é imediata
+export const START = {credits: 300, ship: 'scout', mods: ['L1', 'L1', 'S1', 'R0']} as const; // sobra um slot de arma: a 1ª compra é imediata
 export const SHIPS: Record<ShipKey, ShipDef> = {
-  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 1}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
-  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 1}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
-  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
+  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 1, repair: 1}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
+  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 1, repair: 1}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
+  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1, repair: 1}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
   // tier 4: a vida do Cruiser, bem mais rápida, com um escudo e um míssil a mais que ele
-  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
+  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
 };
 export const MODS: Record<ModKey, ModDef> = {
   L1: {name: 'Laser Mk1',  type: 'laser',  val: 25,   cost: 300,  model: 'mp1'},
@@ -132,15 +139,24 @@ export const MODS: Record<ModKey, ModDef> = {
   C1: {name: 'Chip Multialvo', type: 'chip', val: 2, cost: 4000, model: 'chip1', chip: 'multi'},
   // chip de dano: +20% no dano de lasers e mísseis. Não se compra: o chefe solta um ao ser destruído (BOSS_DROP).
   // Cada nave tem um slot de chip só: é este ou o Multialvo, um de cada vez.
+  // Robô de reparo: conserta o casco em qualquer lugar, depois de REPAIR_DELAY segundos sem atirar nem levar dano (ou na
+  // hora, pela barra de atalhos). Sem ele, o casco só se recupera na base (20% por segundo). Mk1 a Mk3: val = % do casco
+  // por segundo, então o tempo para encher é o mesmo em qualquer nave (60, 45 e 33 s; mesma escala dos robôs do
+  // DarkOrbit, num ritmo mais rápido). O Básico vem com toda nave nova e não se vende: conserta uma vida fixa por
+  // segundo (flat), o que enche o Scout em 80 s mas fica lento nas naves maiores (Cruiser: 12 min).
+  R0: {name: 'Robô de Reparo Básico', type: 'repair', val: 15, cost: 0, model: 'drone', flat: true, drop: true, effect: '+15 de casco por segundo'},
+  R1: {name: 'Robô de Reparo Mk1', type: 'repair', val: 100 / 60, cost: 500,  model: 'drone', effect: 'Casco cheio em 60 s'},
+  R2: {name: 'Robô de Reparo Mk2', type: 'repair', val: 100 / 45, cost: 1000, model: 'drone', bots: 2, effect: 'Casco cheio em 45 s'},
+  R3: {name: 'Robô de Reparo Mk3', type: 'repair', val: 100 / 33, cost: 1500, model: 'drone', bots: 3, effect: 'Casco cheio em 33 s'},
   C2: {name: 'Chip de Dano', type: 'chip', val: 20, cost: 10000, model: 'chip2', chip: 'damage', effect: '+20% de dano (lasers e mísseis)', drop: true},
 };
 /** pasta de cada tipo de módulo dentro de public/models/ */
-export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining', chip: 'chips'};
+export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining', chip: 'chips', repair: 'pets'};
 /** o que o valor do módulo soma; vem colado ao número: "+25 de dano", "+7% de precisão" */
-export const LABEL: Record<ModType, string> = {laser: ' de dano', shield: ' de escudo', engine: ' de velocidade', aim: '% de precisão', missile: ' de dano por míssil', mining: ' de minério por segundo', chip: ' alvos além do principal'};
+export const LABEL: Record<ModType, string> = {laser: ' de dano', shield: ' de escudo', engine: ' de velocidade', aim: '% de precisão', missile: ' de dano por míssil', mining: ' de minério por segundo', chip: ' alvos além do principal', repair: '% do casco por segundo'};
 /** nome do tipo de slot, no plural e no singular ("3 armas", "1 arma") */
-export const SLOT: Record<ModType, string> = {laser: 'armas', shield: 'escudos', engine: 'motores', aim: 'miras', missile: 'mísseis', mining: 'mineradores', chip: 'chips'};
-export const SLOT_ONE: Record<ModType, string> = {laser: 'arma', shield: 'escudo', engine: 'motor', aim: 'mira', missile: 'míssil', mining: 'minerador', chip: 'chip'};
+export const SLOT: Record<ModType, string> = {laser: 'armas', shield: 'escudos', engine: 'motores', aim: 'miras', missile: 'mísseis', mining: 'mineradores', chip: 'chips', repair: 'robôs de reparo'};
+export const SLOT_ONE: Record<ModType, string> = {laser: 'arma', shield: 'escudo', engine: 'motor', aim: 'mira', missile: 'míssil', mining: 'minerador', chip: 'chip', repair: 'robô de reparo'};
 
 // Do mais fraco ao mais forte; quanto mais longe da base, mais alto na lista o inimigo que nasce.
 // Os quatro primeiros caem rápido, para o combate do dia a dia ser ágil; os Dreadnoughts é que são a luta demorada.
@@ -164,6 +180,9 @@ export const ENEMIES: EnemyDef[] = [
 export const BOSS_DROP: ModKey = 'C2';
 /** distância para recolher um espólio: é só passar por cima */
 export const PICKUP_R = 60;
+// Drone Elite: só nas Rotas Silenciosas, entre o Drone Alfa e o Raider. Fica fora de ENEMIES, como o chefe: não nasce
+// em Outer Space nem entra nas contas de balanceamento de lá. Conta como 'drone' nos objetivos de missão.
+export const DRONE_ELITE: EnemyDef = {key: 'drone', name: 'Drone Elite', hp: 600, sh: 300, dmg: 32, speed: 190, reward: 400, r: 22, color: '#ffe066', aggro: false, organic: true};
 export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700, missile: true, attacks: ['line', 'cone', 'homing'], enrage: true};
 
 // ---------- mineração ----------
@@ -200,7 +219,7 @@ export const ORE_STACK = 50;
 // ---------- mapas ----------
 // Para criar um mapa: some a chave em MapKey, descreva-o em MAPS e ligue-o a outro com um portal de cada lado.
 // Só o mapa em que o jogador está existe na simulação: ao sair, ele é descartado, e ao voltar é repovoado do zero.
-export type MapKey = 'outer';
+export type MapKey = 'outer' | 'silent';
 export interface MapDef {
   name: string;
   w: number; h: number;
@@ -222,6 +241,9 @@ export interface MapDef {
   ores: OreKey[];
   /** chefe do mapa: ronda (x, y) e volta respawn segundos depois de destruído */
   boss?: { def: EnemyDef; x: number; y: number; respawn: number };
+  /** guardas: inimigos parados em volta de um ponto fixo. Nascem quando o mapa é povoado e não voltam enquanto a nave
+   *  estiver nele; ao sair e voltar, o mapa é repovoado e eles também. */
+  guards?: { def: EnemyDef; x: number; y: number }[];
   /** portais: em (x, y) deste mapa; levam ao ponto (tx, ty) do mapa to, que deve ficar longe dos portais de lá */
   portals: { x: number; y: number; to: MapKey; tx: number; ty: number }[];
 }
@@ -232,10 +254,27 @@ export const MAPS: Record<MapKey, MapDef> = {
     name: 'Outer Space', w: 9000, h: 6000, bg: 'mapa-1.png',
     base: {x: 600, y: 600, r: 450},
     spawn: {x: 600, y: 910}, // em frente à estação, não dentro dela
-    population: 40, enemies: ENEMIES,
-    mix: [10, 8, 8, 6, 5, 3], // mais inimigos fracos, perto da base, do que fortes, no fundo do mapa
-    asteroids: 30, ores: ['purple', 'cyan', 'blue'],
-    boss: {def: BOSS, x: 7800, y: 5100, respawn: 300}, // no canto oposto à base
-    portals: [],
+    // Drones perto da base, Raiders no fundo. Os Dreadnoughts e o Leviatã ficam nas Rotas Silenciosas.
+    population: 32, enemies: ENEMIES.slice(0, 4),
+    mix: [10, 8, 8, 6], // mais inimigos fracos, perto da base, do que fortes, no fundo do mapa
+    asteroids: 10, ores: ['purple', 'cyan'], // poucos, para valer a pena procurar; a Safira só nas Rotas Silenciosas
+    // a nave de Elyra, à deriva no canto mais afastado (PLACES['nave-elyra'] em game/missions.ts, em 8300, 5400), com
+    // dois Raiders Elite de guarda: mudar as duas juntas
+    guards: [{def: ENEMIES[3], x: 8050, y: 5250}, {def: ENEMIES[3], x: 8550, y: 5650}],
+    // portal no canto inferior esquerdo: leva às Rotas Silenciosas (onde fica a história de Wuthering Heights)
+    portals: [{x: 600, y: 5400, to: 'silent', tx: 700, ty: 700}],
+  },
+  // Rotas Silenciosas: espaço profundo e escuro, sem base; o fim de jogo. Mesmo padrão do primeiro mapa, contado a partir
+  // da chegada pelo portal: Drones Elite (passivos, até alguém atirar) perto dela, Dreadnoughts no meio, Dreadnoughts
+  // Prime no fundo e o Leviatã no canto oposto. Minério: Turquesa perto, Safira longe. Também a estação abandonada de
+  // Heathcliff (cenário das missões, em game/missions.ts).
+  // Fundo: o skybox "Billions stars", escurecido.
+  silent: {
+    name: 'Rotas Silenciosas', w: 9000, h: 6000, bg: 'rotas.jpg',
+    spawn: {x: 700, y: 700},
+    population: 18, enemies: [DRONE_ELITE, ENEMIES[4], ENEMIES[5]], mix: [8, 6, 4],
+    asteroids: 8, ores: ['cyan', 'blue'],
+    boss: {def: BOSS, x: 8200, y: 5300, respawn: 300}, // no canto oposto à chegada
+    portals: [{x: 420, y: 420, to: 'outer', tx: 900, ty: 5150}],
   },
 };

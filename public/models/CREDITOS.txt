@@ -6,6 +6,13 @@ bases/base_anel.glb
   Fonte: https://sketchfab.com/3d-models/toroidal-ring-ship-battle-worn-sci-fi-vessel-d29bf2901bb548fbadbaef98b1421326
   Alterações: removidos os dados que o jogo não usa (tangentes, mapas de normal e de metal/rugosidade e conjuntos de UV extras).
 
+pets/drone.glb
+  "Space Ship", de Rohit3DAsset (https://sketchfab.com/Rohit3Dasset)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/space-ship-32a084f156bf47aca7ba7c21fecfca93
+  Alterações: removidos os dados que o jogo não usa (tools/slim-glb.py) e geometria comprimida (tools/compress-glb.mjs).
+  No jogo, é o drone do robô de reparo.
+
 ships/scout.glb
   "LIGHT FIGHTER SPACESHIP - FREE -", de Kerem Kavalci (https://sketchfab.com/Keremz)
   Licença: Sketchfab Standard (https://sketchfab.com/licenses) — pode ser usado dentro de um projeto, mas o arquivo

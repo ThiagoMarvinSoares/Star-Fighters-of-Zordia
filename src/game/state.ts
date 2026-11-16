@@ -26,6 +26,10 @@ export interface Save {
   boss?: Partial<Record<MapKey, number>>;
   /** missão atual (game/missions.ts): qual, em que fase e quanto do objetivo já foi feito */
   quest?: { id: string; stage: QuestStage; n: number };
+  /** missão atual da sequência secundária (oferecida quando a principal termina), no mesmo formato */
+  side?: { id: string; stage: QuestStage; n: number };
+  /** missões cuja recompensa já foi paga: refazer uma delas (menu de missões) não paga de novo */
+  paid?: string[];
   /** do tutorial antigo, de antes das missões: só lidos uma vez, para continuar do mesmo ponto (ver game/missions.ts) */
   tut?: number; tutN?: number;
 }
@@ -41,6 +45,8 @@ export interface Stats {
   multi: number;
   /** multiplicador do dano de lasers e mísseis (1 = normal; 1.2 com o chip de dano). dmg já vem multiplicado. */
   boost: number; slots: Record<ModType, number>; r: number;
+  /** robô de reparo: % do casco recuperado por segundo fora de combate, em qualquer lugar (0 = sem robô) */
+  repair: number;
   /** cor da aura do escudo e da chama do motor: a do melhor módulo equipado de cada tipo */
   aura: string; flame: string;
 }
@@ -67,6 +73,9 @@ export interface Player extends Body {
   lastShot: number; fight: number;
   /** pedido de lançar um míssil (barra de atalhos): qual dos mísseis equipados, 0 = o primeiro; a simulação atende e apaga */
   launch: number | null;
+  /** robô de reparo: fix = pedido de consertar já (barra de atalhos), que a simulação atende e apaga; fixAt = quando foi
+   *  o último pedido; fixing = está consertando neste quadro */
+  fix: boolean; fixAt: number; fixing: boolean;
   /** um por míssil equipado, na ordem em que estão na nave: n = cargas prontas, t = segundos até a próxima voltar.
    *  mleft = o próximo míssil sai do lado esquerdo da nave. */
   mis: { n: number; t: number }[]; mleft: boolean;
@@ -121,7 +130,7 @@ export interface FloatText { x: number; y: number; s: string; c: string; t: numb
 
 // descarta módulos desconhecidos ou que passam do limite do tipo na nave
 export const trim = (mods: unknown[], ship: ShipKey): ModKey[] => {
-  const n: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0};
+  const n: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0, repair: 0};
   return mods.filter((m): m is ModKey =>
     typeof m === 'string' && Object.hasOwn(MODS, m) && ++n[MODS[m as ModKey].type] <= SHIPS[ship].slots[MODS[m as ModKey].type]);
 };
@@ -135,6 +144,8 @@ function emptyCargo(from?: unknown): Record<OreKey, number> {
 // progresso salvo no navegador (créditos, nave, módulos, carga). OLD_SAVE_KEY é a chave de quando o jogo se chamava
 // Nebula Raiders: quem já tinha progresso continua de onde parou, e o próximo salvamento grava na chave nova.
 const SAVE_KEY = 'star-fighters-of-zordia', OLD_SAVE_KEY = 'nebula-raiders';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const okQuest = (q: any) => !!q && typeof q.id === 'string' && ['offer', 'active', 'ready', 'done'].includes(q.stage) && Number.isFinite(q.n);
 /** Confere um progresso vindo de fora (do navegador ou da conta do piloto) e devolve só o que o jogo conhece;
  *  null se não serve. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,8 +169,9 @@ export function parseSave(s: any): Save | null {
                   && {pos: {map: s.pos.map, x: +s.pos.x, y: +s.pos.y, hp: +s.pos.hp, sh: +s.pos.sh}}),
               ...(s.boss && typeof s.boss === 'object'
                   && {boss: Object.fromEntries(Object.entries(s.boss).filter(([k, v]) => Object.hasOwn(MAPS, k) && Number.isFinite(v)))}),
-              ...(s.quest && typeof s.quest.id === 'string' && ['offer', 'active', 'ready', 'done'].includes(s.quest.stage) && Number.isFinite(s.quest.n)
-                  && {quest: {id: s.quest.id, stage: s.quest.stage, n: +s.quest.n}}),
+              ...(okQuest(s.quest) && {quest: {id: s.quest.id, stage: s.quest.stage, n: +s.quest.n}}),
+              ...(okQuest(s.side) && {side: {id: s.side.id, stage: s.side.stage, n: +s.side.n}}),
+              ...(Array.isArray(s.paid) && {paid: s.paid.filter((k: unknown) => typeof k === 'string').slice(0, 200)}),
               ...(Number.isInteger(s.tut) && s.tut >= 0 && {tut: s.tut}), ...(Number.isInteger(s.tutN) && s.tutN >= 0 && {tutN: s.tutN})};
     }
   return null;
@@ -185,13 +197,13 @@ export const best = (type: ModType): ModKey | undefined => save.mods.filter(m =>
 export const count = (type: ModType) => save.mods.filter(m => MODS[m].type === type).length;
 // atributos da nave atual somados aos módulos equipados
 export function stats(): Stats {
-  const s = SHIPS[save.ship], t: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0};
+  const s = SHIPS[save.ship], t: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0, repair: 0};
   for (const m of save.mods) t[MODS[m].type] += MODS[m].val;
   const chips = save.mods.map(m => MODS[m]).filter(m => m.type === 'chip');
   const multi = chips.filter(m => m.chip === 'multi').reduce((a, m) => a + m.val, 0);
   const boost = 1 + Math.max(0, ...chips.filter(m => m.chip === 'damage').map(m => m.val)) / 100; // o maior vale; não somam
   const color = (type: ModType) => { const k = best(type); return k && MODS[k].color || '#66ccff'; };
-  return {maxHp: s.hp, maxSh: t.shield, dmg: Math.round(t.laser * boost), speed: s.speed + t.engine, acc: Math.min(1, ACCURACY + t.aim / 100), mine: t.mining, cargo: s.cargo, mineLevel: Math.max(0, ...save.mods.map(m => MODS[m].level ?? 0)), multi, boost, slots: s.slots, r: s.r, aura: color('shield'), flame: color('engine')};
+  return {maxHp: s.hp, maxSh: t.shield, dmg: Math.round(t.laser * boost), speed: s.speed + t.engine, acc: Math.min(1, ACCURACY + t.aim / 100), mine: t.mining, cargo: s.cargo, mineLevel: Math.max(0, ...save.mods.map(m => MODS[m].level ?? 0)), multi, boost, repair: save.mods.reduce((a, k) => a + (MODS[k].type !== 'repair' ? 0 : MODS[k].flat ? MODS[k].val / s.hp * 100 : MODS[k].val), 0), slots: s.slots, r: s.r, aura: color('shield'), flame: color('engine')};
 }
 
 /** a nave está na zona segura de uma base? (só lá se compra, vende e equipa; mapa sem base não tem isso) */
@@ -202,14 +214,14 @@ export const map = (): MapDef => MAPS[world.map];
 
 const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
-                          target: null, firing: false, auto: false, multi: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
+                          target: null, firing: false, auto: false, multi: false, extra: [], launch: null, fix: false, fixAt: -99, fixing: false, mis: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
 export const rocks: Rock[] = [], drops: Drop[] = [], strikes: Strike[] = [];
 /** Troca o progresso atual pelo que veio de fora (o da conta, ao entrar) e conserta a nave para ele; false se não serve.
  *  Grava no navegador, mas não avisa onPersist: o servidor acabou de mandar esse mesmo progresso. */
 export function adopt(raw: unknown) {
   const got = parseSave(raw);
   if (!got) return false;
-  delete save.pos; delete save.boss; // o que o progresso novo não trouxer não pode sobrar do antigo
+  delete save.pos; delete save.boss; delete save.quest; delete save.side; delete save.paid; // o que o progresso novo não trouxer não pode sobrar do antigo
   Object.assign(save, got);
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} // sem passar por store(): a posição é a do progresso, não a de agora
   const st = stats(); p.hp = st.maxHp; p.sh = st.maxSh; // quem chama segue com resume() (sim.ts), que põe a nave onde ela estava

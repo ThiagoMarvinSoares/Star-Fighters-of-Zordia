@@ -27,7 +27,7 @@ const PLACEHOLDER = new THREE.Mesh(new THREE.ConeGeometry(.45, 2, 5).rotateZ(-Ma
 // ---------- biblioteca de modelos: public/models/<pasta>/<nome>.glb ----------
 // Pastas: ships (naves), weapons, shields, engines, aim e missiles (lasers, escudos, motores, miras e mísseis: só
 // viram ícone no hangar e na barra de atalhos),
-// bases (a estação da base).
+// bases (a estação da base), pets (o robô de reparo, que voa em volta da nave: carregado como nave).
 // O que o jogo espera de um arquivo:
 //  - nave: +Y para cima e frente em +Z (padrão glTF). Tamanho e centro são ajustados sozinhos. Objetos vazios
 //    chamados gun_1, gun_2... marcam onde ficam as armas.
@@ -41,7 +41,7 @@ const PLACEHOLDER = new THREE.Mesh(new THREE.ConeGeometry(.45, 2, 5).rotateZ(-Ma
 //    brilho próprio são mantidos. Em modelos só com cor por vértice, peças com glow, light, illuminated, reticle, emitter, energy,
 //    beacon, window ou track no nome brilham.
 export type ModelKind = 'ship' | 'weapon' | 'module' | 'base' | 'rock';
-const KIND: Record<string, ModelKind> = {ships: 'ship', weapons: 'weapon', shields: 'module', engines: 'module', aim: 'module', missiles: 'module', chips: 'module', asteroids: 'rock', bases: 'base'}; // pasta -> tipo
+const KIND: Record<string, ModelKind> = {ships: 'ship', weapons: 'weapon', shields: 'module', engines: 'module', aim: 'module', missiles: 'module', chips: 'module', pets: 'ship', asteroids: 'rock', bases: 'base'}; // pasta -> tipo
 // modelos que não ficam em ships/<chave>.glb
 const PATH: Partial<Record<ModelKey, string>> = {station: 'bases/base_anel'};
 // bases grossas, que esconderiam as naves ao cruzar: ficam inteiras abaixo do plano de voo e as naves passam por cima
@@ -203,24 +203,28 @@ export function iconYaw(o: THREE.Object3D) {
   return Math.hypot(lit.x, lit.z) < 1e-6 ? -.7 : Math.atan2(lit.z, lit.x) - (Math.PI / 2 + .6);
 }
 /** Ícone (data URL) de um modelo, ex.: iconOf('shields/shield1'). Devolve undefined enquanto o .glb não
- *  carregou ou se não existe; com placeholder, fotografa o substituto genérico até o .glb chegar (naves). */
-export function iconOf(path: string, placeholder = false, px = 256) {
+ *  carregou ou se não existe; com placeholder, fotografa o substituto genérico até o .glb chegar (naves). copies > 1
+ *  fotografa o modelo repetido, em grupo (os robôs de reparo de 2 e 3 drones). */
+export function iconOf(path: string, placeholder = false, px = 256, copies = 1) {
   if (placeholder) template(path); else request(path);
   if (!placeholder && !loaded.has(path)) return undefined;
-  let url = icons.get(path);
+  const id = copies > 1 ? `${path}*${copies}` : path;
+  let url = icons.get(id);
   if (!url) {
     if (!photo) {
       const renderer = new THREE.WebGLRenderer({alpha: true, antialias: true});
       photo = {renderer, scene: lit(new THREE.Scene(), renderer), cam: new THREE.OrthographicCamera()};
       photo.renderer.setSize(px, px, false);
     }
-    const o = cache.get(path)!.clone();
+    const one = cache.get(path)!, o = copies > 1 ? new THREE.Group() : one.clone();
+    // em grupo: lado a lado (2) ou em triângulo (3), um pouco desencontrados, como se viessem em formação
+    if (copies > 1) for (const [x, z] of copies === 2 ? [[-.85, .45], [.85, -.45]] : [[-1.15, .7], [1.15, .7], [0, -.85]]) { const c = one.clone(); c.position.set(x, 0, z); o.add(c); }
     o.rotation.y = KIND[path.split('/')[0]] === 'module' ? iconYaw(o) : -.7;
     const box = new THREE.Box3().setFromObject(o), side = box.getSize(new THREE.Vector3()).length() * 1.05;
     o.position.sub(box.getCenter(new THREE.Vector3())); // centro do modelo no ponto para onde a câmera olha
     photo.scene.add(o); aimCamera(photo.cam, {x: 0, y: 0}, side, side);
     photo.renderer.render(photo.scene, photo.cam);
-    icons.set(path, url = photo.renderer.domElement.toDataURL());
+    icons.set(id, url = photo.renderer.domElement.toDataURL());
     photo.scene.remove(o);
   }
   return url;
