@@ -208,7 +208,7 @@ export const MISSIONS: Mission[] = [
       ['huedro', 'Fabrício.'],
       'Eu sei, Comandante. Eu também vi.',
     ]},
-    reward: {credits: 2000},
+    reward: {credits: 5000},
   },
   {
     id: 'depois-do-silencio', title: 'Depois do silêncio', giver: 'huedro', next: 'o-farol', report: 'field',
@@ -260,7 +260,7 @@ export const MISSIONS: Mission[] = [
       'Eu acredito nos dados. E, pela primeira vez, acho que eles não precisam explicar tudo.',
       ['huedro', 'Obrigado, piloto. Agora volte para casa você também.'],
     ],
-    reward: {credits: 1000},
+    reward: {credits: 15000}, // o fim de Wuthering Heights: a história acontece em território de Dreadnought Prime
   },
 ];
 const byId = new Map(MISSIONS.map(m => [m.id, m]));

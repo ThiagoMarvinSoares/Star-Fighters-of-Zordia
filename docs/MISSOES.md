@@ -123,9 +123,9 @@ História gótica e melancólica, inspirada em *O Morro dos Ventos Uivantes*: El
 |---|---|---|
 | `o-sinal-perdido` | achar a nave de Elyra, à deriva no canto mais afastado de Outer Space (8300, 5400), com dois Raiders Elite de guarda; escondida (`hidden`), sem conversa de início | ao chegar perto: o Fabrício capta o transponder, o Huedro se lembra do caso; os registros de Elyra e o transmissor que continua ativo sem energia |
 | `a-estacao` | chegar à estação abandonada, nas Rotas Silenciosas (7200, 1950); o Fabrício acha as coordenadas nos registros e as passa ao piloto | transmissões soltas de Elyra no caminho; no local, Heathcliff morto e a última gravação ("Se ela voltar, não deixem a porta fechada."); na fala do ALERTA (`cue`), a nave de Elyra entra nas Rotas Silenciosas pelo portal, sozinha, e vem até o lado da estação, à vista do piloto |
-| `o-ultimo-retorno` | chegar ao sistema central, na doca (7200, 2180) | a escolha muda o caminho, não o fim (`ask.otherwise`). Liberada: "ACESSO CONCEDIDO" e a transmissão para no mesmo segundo. Mantida fechada: Elyra ainda fala alguns segundos e a transmissão se apaga sozinha. Nas duas, a nave de Elyra some no silêncio (`cue`); 2.000 cr |
+| `o-ultimo-retorno` | chegar ao sistema central, na doca (7200, 2180) | a escolha muda o caminho, não o fim (`ask.otherwise`). Liberada: "ACESSO CONCEDIDO" e a transmissão para no mesmo segundo. Mantida fechada: Elyra ainda fala alguns segundos e a transmissão se apaga sozinha. Nas duas, a nave de Elyra some no silêncio (`cue`); 5.000 cr |
 | `depois-do-silencio` | voltar à base (lugar `base`, em Outer Space) | na sala do Comandante, ele e o Fabrício repassam os fatos: o eco gravado é a hipótese do Fabrício, a nave que se moveu sozinha fica sem resposta. O farol: Heathcliff o via aceso, Elyra nunca viu a luz; "ou os dois disseram a verdade". Ninguém sabe se ela chegou a entrar |
-| `o-farol` | voltar à estação abandonada | leitura do farol: geradores frios e "FAROL: ATIVO"; o Comandante: "Talvez agora ela consiga ver."; o Fabrício arquiva o caso ("A tripulante retornou à estação.") e admite que os dados não precisam explicar tudo; 1.000 cr; fim da sequência |
+| `o-farol` | voltar à estação abandonada | leitura do farol: geradores frios e "FAROL: ATIVO"; o Comandante: "Talvez agora ela consiga ver."; o Fabrício arquiva o caso ("A tripulante retornou à estação.") e admite que os dados não precisam explicar tudo; 15.000 cr; fim da sequência |
 
 O cenário dessa história (a nave de Elyra e a estação) é montado por `scenery()`, em `src/game/missions.ts`, conforme a missão em que o piloto está: a nave à deriva está lá desde o começo do jogo (é achá-la que abre a história), vem até o lado da estação no fim da segunda e some no silêncio depois de a porta ser liberada; a estação fica no mapa, em silêncio, depois de encontrada.
 
@@ -201,9 +201,9 @@ Objetos que existem no mapa por causa de uma missão ficam em `scenery()`: cada 
 - O jogo se passa no setor **Outer Space**, ao redor da **Base Outer Space**, uma estação em anel da **Aliança de Zordia**.
 - Na área da base o piloto está seguro e o casco é consertado; quem chega ainda em combate não tem proteção.
 - **Drones:** criaturas orgânicas que só atacam quem mexe com elas; ficam perto da base.
-- Quanto mais longe da base, mais perigoso: Raiders, depois Dreadnoughts, e no canto mais distante o **Leviatã**, uma criatura orgânica colossal que guarda um chip.
-- **Rotas Silenciosas**: espaço profundo e vazio além do portal sul de Outer Space. Ali ficam a estação de Heathcliff e a nave de Elyra (ver a sequência secundária).
-- **Ametista** é o minério comum; **Turquesa** e **Safira** são mais duras, valem mais e ficam em áreas mais perigosas. Nenhuma das amostras de Ametista mostrou contaminação orgânica.
+- Quanto mais longe da base, mais perigoso: depois dos Drones vêm os Raiders. No canto mais afastado de Outer Space fica a nave de Elyra, à deriva.
+- **Rotas Silenciosas**: espaço profundo e escuro além do portal sul, sem base; o fim de jogo. Ali ficam os Dreadnoughts, o **Leviatã** (uma criatura orgânica colossal que guarda um chip) e a estação de Heathcliff (ver a sequência secundária).
+- **Ametista** é o minério comum; **Turquesa** e **Safira** são mais duras, valem mais e ficam em áreas mais perigosas. A Safira só existe nas Rotas Silenciosas. Os asteroides são poucos e grandes. Nenhuma das amostras de Ametista mostrou contaminação orgânica.
 
 ## Antes de publicar
 

@@ -144,10 +144,11 @@ export const MODS: Record<ModKey, ModDef> = {
   // por segundo, então o tempo para encher é o mesmo em qualquer nave (60, 45 e 33 s; mesma escala dos robôs do
   // DarkOrbit, num ritmo mais rápido). O Básico vem com toda nave nova e não se vende: conserta uma vida fixa por
   // segundo (flat), o que enche o Scout em 80 s mas fica lento nas naves maiores (Cruiser: 12 min).
+  // Preço pela regra da economia: Mk1 da era do Scout, Mk2 da Corvette, Mk3 do Cruiser.
   R0: {name: 'Robô de Reparo Básico', type: 'repair', val: 15, cost: 0, model: 'drone', flat: true, drop: true, effect: '+15 de casco por segundo'},
-  R1: {name: 'Robô de Reparo Mk1', type: 'repair', val: 100 / 60, cost: 500,  model: 'drone', effect: 'Casco cheio em 60 s'},
-  R2: {name: 'Robô de Reparo Mk2', type: 'repair', val: 100 / 45, cost: 1000, model: 'drone', bots: 2, effect: 'Casco cheio em 45 s'},
-  R3: {name: 'Robô de Reparo Mk3', type: 'repair', val: 100 / 33, cost: 1500, model: 'drone', bots: 3, effect: 'Casco cheio em 33 s'},
+  R1: {name: 'Robô de Reparo Mk1', type: 'repair', val: 100 / 60, cost: 1500, model: 'drone', effect: 'Casco cheio em 60 s'},
+  R2: {name: 'Robô de Reparo Mk2', type: 'repair', val: 100 / 45, cost: 6000, model: 'drone', bots: 2, effect: 'Casco cheio em 45 s'},
+  R3: {name: 'Robô de Reparo Mk3', type: 'repair', val: 100 / 33, cost: 18000, model: 'drone', bots: 3, effect: 'Casco cheio em 33 s'},
   C2: {name: 'Chip de Dano', type: 'chip', val: 20, cost: 10000, model: 'chip2', chip: 'damage', effect: '+20% de dano (lasers e mísseis)', drop: true},
 };
 /** pasta de cada tipo de módulo dentro de public/models/ */
@@ -190,8 +191,10 @@ export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 200
 // MINE_RANGE, liga o feixe: o minério passa aos poucos para o porão, até o asteroide se esgotar ou o porão encher.
 // A carga é vendida no hangar. Quanto mais valioso o minério, mais difícil: exige um minerador de nível maior (level:
 // a Safira só sai com o Mk3) e é mais duro (hard divide a velocidade do feixe). Com o feixe ligado, cada minerador no
-// melhor minério que ele alcança rende: Mk1 em Ametista ~720 cr/min, Mk2 em Turquesa ~2.100, Mk3 em Safira ~6.600.
-// Na prática ainda pesam o porão da nave, o voo entre asteroides e as idas à base para vender.
+// melhor minério que ele alcança rende: Mk1 em Ametista ~900 cr/min, Mk2 em Turquesa ~2.900, Mk3 em Safira ~12.000.
+// Na prática pesam o porão da nave, o voo entre asteroides (são poucos: cada um guarda bastante, e um costuma encher o
+// porão) e as idas à base para vender: sobra cerca de metade disso no começo e um terço no fim, abaixo do combate,
+// mas sem risco. A Safira só existe nas Rotas Silenciosas, sem base: vender exige voltar pelo portal.
 export type OreKey = 'purple' | 'cyan' | 'blue';
 export interface OreDef {
   name: string;
@@ -207,12 +210,12 @@ export interface OreDef {
   hard: number;
 }
 export const ORES: Record<OreKey, OreDef> = {
-  purple: {name: 'Ametista', price: 4,  color: '#b56cff', model: 'asteroide2', level: 1, hard: 1},
-  cyan:   {name: 'Turquesa', price: 10, color: '#4fe3e3', model: 'asteroide3', level: 2, hard: 2},
-  blue:   {name: 'Safira',   price: 22, color: '#5a8dff', model: 'asteroide4', level: 3, hard: 3},
+  purple: {name: 'Ametista', price: 5,  color: '#b56cff', model: 'asteroide2', level: 1, hard: 1},
+  cyan:   {name: 'Turquesa', price: 14, color: '#4fe3e3', model: 'asteroide3', level: 2, hard: 2},
+  blue:   {name: 'Safira',   price: 40, color: '#5a8dff', model: 'asteroide4', level: 3, hard: 3},
 };
 /** alcance do feixe de mineração, e quanto minério um asteroide guarda (sorteado entre os dois valores) */
-export const MINE_RANGE = 260, ROCK_ORE = [40, 90] as const;
+export const MINE_RANGE = 260, ROCK_ORE = [100, 200] as const;
 /** no inventário, o minério se empilha em packs deste tamanho (uma casa por pack) */
 export const ORE_STACK = 50;
 
