@@ -33,7 +33,7 @@ const fail = (message: string, status = 400, headers?: Record<string, string>) =
 // ---------- Redis (Upstash, API REST) ----------
 // Acha as credenciais pelo sufixo do nome, porque cada integração batiza as variáveis de um jeito (algumas com o nome
 // do banco na frente). O nome mais curto ganha: o sem prefixo primeiro.
-function credentials(env = process.env) {
+export function credentials(env = process.env) {
   const suffix = /(KV_REST_API_URL|UPSTASH_REDIS_REST_URL|REDIS_REST_URL)$/;
   for (const key of Object.keys(env).filter(k => suffix.test(k)).sort((a, b) => a.length - b.length)) {
     const url = env[key], token = env[key.replace(/URL$/, 'TOKEN')];

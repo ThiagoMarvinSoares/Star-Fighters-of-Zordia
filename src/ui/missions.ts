@@ -97,12 +97,15 @@ const STATUS: Record<string, [string, string]> = {done: ['Concluída', 'done'], 
 // Cada sequência é um <details>: o título abre e fecha a lista das missões dela (fechadas ficam em folded, enquanto a
 // página estiver aberta). No título, um botão joga a sequência de novo desde a primeira missão.
 const folded = new Set<Track>();
+const DEV = location.hostname === 'localhost';
 function renderBook() {
   const chains = journal();
   const open = chains.filter(c => c.items.some(i => i.status !== 'done')), shown = pin.track ?? open[0]?.track;
   book.innerHTML = `<div class="frame"><header><h2>Missões</h2><button class="x" data-close title="Fechar (J ou Esc)">×</button></header>
     ${chains.length ? chains.map(c => {
-      const live = c.items.some(i => i.status !== 'done'), again = `<button class="play" data-play="${c.track}" data-id="${c.items[0].id}" title="${live ? 'Recomeçar a sequência desde a primeira missão' : 'Jogar a sequência de novo'} (a recompensa só é paga uma vez)">${live ? 'Recomeçar' : 'Refazer'}</button>`;
+      // Refazer/Recomeçar: só rodando na própria máquina (testes do autor). Para um jogador, quem refaz ou zera as missões
+      // é o administrador, direto na conta (tools/missoes-piloto.ts).
+      const live = c.items.some(i => i.status !== 'done'), again = !DEV ? '' : `<button class="play" data-play="${c.track}" data-id="${c.items[0].id}" title="${live ? 'Recomeçar a sequência desde a primeira missão' : 'Jogar a sequência de novo'} (a recompensa só é paga uma vez)">${live ? 'Recomeçar' : 'Refazer'}</button>`;
       return `<details class="${c.track === shown && live ? 'on' : ''}" data-track="${c.track}" ${folded.has(c.track) ? '' : 'open'}>
         <summary><h3>${c.chain}${live ? `<button data-pin="${c.track}" ${c.track === shown ? 'disabled' : ''}>${c.track === shown ? 'Acompanhando' : 'Acompanhar'}</button>` : '<em>Concluída</em>'}${again}</h3></summary>
         <ol>${c.items.map(i => `<li class="${STATUS[i.status][1]}"><b>${i.title}</b><small>${i.giver} · ${STATUS[i.status][0]}</small>${i.goal ? `<span>${i.goal}</span>` : ''}</li>`).join('')}</ol>
@@ -118,7 +121,7 @@ book.onclick = ev => {
   ev.preventDefault(); // botão dentro do título: não abre nem fecha a sequência
   if (d.close !== undefined) toggleBook(false);
   else if (d.pin) { pin.track = d.pin as Track; renderBook(); }
-  else if (d.play && !talk) { // refazer: a conversa de início abre na hora, onde o piloto estiver
+  else if (d.play && !talk && DEV) { // refazer: a conversa de início abre na hora, onde o piloto estiver
     const t = d.play as Track;
     replay(t, d.id!); pin.track = t; persist(); toggleBook(false);
     const c = talkFor(t); if (c) open(c);

@@ -28,14 +28,18 @@ export const PLACES: Record<string, { map: MapKey; x: number; y: number; r: numb
   'nave-elyra': {map: 'outer', x: 8300, y: 5400, r: 220}, // no canto mais afastado da base; os Raiders Elite que a guardam ficam em MAPS.outer.guards
   'estacao-abandonada': {map: 'silent', x: 7200, y: 1950, r: 330},
   'sistema-central': {map: 'silent', x: 7200, y: 2180, r: 90},
-  'base': {map: HOME, ...MAPS[HOME].base!}, // a base aliada, em Outer Space // a doca da estação abandonada, logo abaixo dela
+  'base': {map: HOME, ...MAPS[HOME].base!}, // a base aliada, em Outer Space
+  'baliza': {map: HOME, x: 2400, y: 2200, r: 150}, // calibração da navegação: um ponto vazio, na faixa dos Drones // a doca da estação abandonada, logo abaixo dela
 };
 export type PlaceId = string;
 /** As coordenadas de um lugar, como aparecem no minimapa: "Rotas Silenciosas · X 7200 · Y 1950" */
 export const coords = (id: PlaceId) => { const q = PLACES[id]; return `${MAPS[q.map].name} · X ${q.x} · Y ${q.y}`; };
 /** objetivo: destruir inimigos de um tipo (key do modelo: 'drone' vale para Drone e Drone Alfa), extrair um minério,
  *  comprar módulos de um tipo, ou chegar a um lugar (conta ao entrar no raio dele) */
-export type Goal = { kill: EnemyKey; count: number } | { mine: OreKey; count: number } | { buy: ModType; count: number } | { reach: PlaceId };
+export type Goal = { kill: EnemyKey; count: number } | { mine: OreKey; count: number } | { buy: ModType; count: number } | { reach: PlaceId } | { use: Skill; count: number };
+/** sistemas da nave que uma missão pode pedir para usar: destruir inimigos com a mira automática ligada, lançar mísseis,
+ *  encher o casco com o robô de reparo */
+export type Skill = 'auto' | 'missile' | 'repair';
 export interface Mission {
   id: string;
   /** nome da missão no menu de missões */
@@ -262,15 +266,163 @@ export const MISSIONS: Mission[] = [
     ],
     reward: {credits: 15000}, // o fim de Wuthering Heights: a história acontece em território de Dreadnought Prime
   },
+
+  // ---------- operações da base: calibração (um tutorial de cada sistema) e contratos ----------
+  // Oferecida quando o tutorial termina. As quatro primeiras são a "calibração dos sistemas da nave": o Fabrício quer
+  // leituras de campo, mas na prática cada uma ensina um sistema (mira automática, mísseis, robô de reparo e navegação
+  // por coordenadas). Elas abrem e fecham no campo, emendadas. Depois vêm os contratos, entregues na base, que
+  // acompanham a evolução do piloto até o Leviatã; cada um levanta uma pista dos mistérios de Zordia (docs/LORE.md,
+  // seção 9) sem resolvê-los.
+  {
+    id: 'calibracao-mira', title: 'Calibração: mira', giver: 'fabricio', next: 'calibracao-misseis', report: 'field',
+    start: [
+      'Antes de te mandar mais longe, preciso de leituras de cada sistema da sua nave. Calibração de fábrica não me serve: quero dados de campo.',
+      'Começamos pela mira automática. Ligada, ela trava sozinha no inimigo mais próximo ao alcance e abre fogo enquanto você pilota. Destrua três inimigos com ela ligada.',
+      ['huedro', 'Traduzindo o Fabrício: aperte T e deixe a nave trabalhar. Aperte de novo para desligar.'],
+    ],
+    goal: {use: 'auto', count: 3}, text: 'Destrua 3 inimigos com a mira automática', hint: 'T liga e desliga a mira automática',
+    end: ['Três travas limpas. O computador de mira respondeu dentro da margem. Próximo sistema.'],
+    reward: {credits: 300},
+  },
+  {
+    id: 'calibracao-misseis', title: 'Calibração: mísseis', giver: 'fabricio', next: 'calibracao-reparo', report: 'field', gift: ['M1'],
+    start: [
+      'Mísseis. Se a sua nave ainda não tinha um lançador, agora tem: instalei um Mk1. Equipamento de teste. Se funcionar, é seu.',
+      'Cada lançador tem duas cargas, que voltam sozinhas depois de alguns segundos. O míssil é lento, mas bate forte. Trave a mira num inimigo e lance três.',
+    ],
+    goal: {use: 'missile', count: 3}, text: 'Lance 3 mísseis', hint: '2, ou a casa do míssil na barra de atalhos, lança no alvo travado',
+    end: ['Três lançamentos, três trajetórias dentro do previsto. O lançador fica com você.'],
+    reward: {credits: 300},
+  },
+  {
+    id: 'calibracao-reparo', title: 'Calibração: reparo', giver: 'fabricio', next: 'calibracao-navegacao', report: 'field', gift: ['R0'],
+    start: [
+      'Agora o robô de reparo. Toda nave da Aliança sai com um, e quase nenhum piloto sabe usar direito.',
+      'Ele conserta o casco em qualquer lugar, mas só com a nave parada e fora de combate. Começa sozinho depois de alguns segundos, ou na hora, pela casa da chave na barra de atalhos.',
+      'Leve algum dano, saia da luta, pare a nave e deixe o casco encher até o fim.',
+      ['huedro', '"Leve algum dano." Só o Fabrício transforma levar tiro em procedimento.'],
+    ],
+    goal: {use: 'repair', count: 1}, text: 'Encha o casco com o robô de reparo', hint: 'Fora da base, com a nave parada e fora de combate',
+    end: ['Casco em cem por cento, sem passar pela base. O robô está calibrado.'],
+    reward: {credits: 300},
+  },
+  {
+    id: 'calibracao-navegacao', title: 'Calibração: navegação', giver: 'fabricio', next: 'patrulha', report: 'field', find: true,
+    start: [
+      'Último sistema: navegação. Acima do minimapa fica a sua posição, em X e Y. A grade do mapa marca de mil em mil.',
+      `Vou te passar um ponto sem marcador, só as coordenadas: X ${PLACES['baliza'].x}, Y ${PLACES['baliza'].y}. Chegue lá pelos números. É assim que vou te mandar a lugares que ninguém mapeou.`,
+    ],
+    goal: {reach: 'baliza'}, text: `Chegue a X ${PLACES['baliza'].x} · Y ${PLACES['baliza'].y}`, hint: 'Sem marcador: compare com a sua posição, acima do minimapa',
+    end: [
+      'Posição confirmada. Margem de erro aceitável.',
+      'Sistemas calibrados. A partir daqui, você trabalha para a base de verdade. Volte quando quiser serviço: eu tenho uma lista.',
+    ],
+    reward: {credits: 300},
+  },
+  {
+    id: 'patrulha', title: 'Patrulha', giver: 'fabricio', next: 'cascos-contaminados',
+    start: [
+      'Primeiro contrato. Os Drones estão aparecendo mais perto da base do que o normal. Não sei por quê, e não gosto de não saber.',
+      'Derrube dez e me traga os registros de combate.',
+      ['huedro', 'E se algum vier atrás de você, volte para a base. Ninguém aqui ganha medalha por teimosia.'],
+    ],
+    goal: {kill: 'drone', count: 10}, text: 'Destrua 10 Drones', hint: 'Ficam perto da base; qualquer tipo de Drone conta',
+    end: [
+      'Dez. Os registros mostram o mesmo padrão: eles só reagem quando alguém entra no território deles.',
+      'Ou seja, quem se aproximou fomos nós. Não eles. Ponto anotado. Pelo serviço, 1.200 créditos.',
+    ],
+    reward: {credits: 1200},
+  },
+  {
+    id: 'cascos-contaminados', title: 'Cascos contaminados', giver: 'fabricio', next: 'frequencias',
+    start: [
+      'Agora os Raiders. Os cascos têm marcas de expedições humanas antigas, mas com tecido orgânico crescendo por cima das placas.',
+      'Quero saber se é uma tripulação que enlouqueceu ou outra coisa no controle. Derrube oito; eu analiso os destroços pelos seus sensores.',
+      ['huedro', 'Eles atiram de volta, piloto. E lançam míssil: quando aparecer o risco vermelho, saia da linha.'],
+    ],
+    goal: {kill: 'raider', count: 8}, text: 'Destrua 8 Raiders', hint: 'Ficam longe da base; Raiders Elite também contam',
+    end: [
+      'Oito. Analisei os destroços. Nenhum sinal de vida humana a bordo, em nenhum deles.',
+      'Mas os sistemas de navegação estavam ativos. As rotas gravadas apontam todas para portais que não funcionam desde o Silêncio das Rotas.',
+      ['huedro', 'Então eles estão tentando voltar para algum lugar.'],
+      'Ou estão sendo levados. Ainda não sei. 3.000 créditos pelo serviço.',
+    ],
+    reward: {credits: 3000},
+  },
+  {
+    id: 'frequencias', title: 'Frequências', giver: 'fabricio', next: 'sem-tripulacao',
+    start: [
+      'A Turquesa conduz frequência. Se alguma coisa está transmitindo neste setor, ela é o melhor receptor que temos.',
+      'Preciso de trinta unidades. Ela é dura: só sai com um Minerador Mk2, à venda no hangar. E fica longe da base, no caminho dos Raiders.',
+    ],
+    goal: {mine: 'cyan', count: 30}, text: 'Extraia 30 de Turquesa para análise', hint: 'Exige Minerador Mk2 · asteroides azul-claros, longe da base',
+    end: [
+      'Trinta. Deixe-me ver...',
+      'Há um ruído preso no cristal. Uma frequência fraca, repetida, que não vem de nenhum equipamento da Aliança.',
+      ['huedro', 'Uma mensagem?'],
+      'Um padrão. Mensagem é uma conclusão, e eu ainda não tenho uma. As amostras ficam comigo. 3.500 créditos.',
+    ],
+    take: {cyan: 30}, reward: {credits: 3500},
+  },
+  {
+    id: 'sem-tripulacao', title: 'Sem tripulação', giver: 'huedro', next: 'densidade',
+    start: [
+      'Piloto, hoje quem pede sou eu. Do outro lado do portal sul, nas Rotas Silenciosas, há cruzadores da Aliança patrulhando sozinhos. Dreadnoughts.',
+      'Não temos registro de tripulação a bordo de nenhum deles desde o Silêncio. E eles atiram em nós.',
+      ['fabricio', 'Uma frota militar operando sem ninguém dando ordens. Quero os registros de comando. Derrube três.'],
+      'Lá não há base, piloto. Vá com o casco cheio e o robô de reparo. E volte.',
+    ],
+    goal: {kill: 'dreadnought', count: 3}, text: 'Destrua 3 Dreadnoughts', hint: 'Rotas Silenciosas, pelo portal sul · longe da chegada',
+    end: [
+      'Você voltou. Ótimo.',
+      ['fabricio', 'Os registros de comando estão intactos. A última ordem recebida tem a data do Silêncio das Rotas: "manter patrulha até novo contato".'],
+      ['fabricio', 'O novo contato nunca veio. Eles continuam cumprindo a última ordem.'],
+      'Então é isso que sobrou da frota: gente que foi embora e máquinas que ficaram de guarda. 10.000 créditos, piloto. Você mereceu.',
+    ],
+    reward: {credits: 10000},
+  },
+  {
+    id: 'densidade', title: 'Alta densidade', giver: 'fabricio', next: 'o-guardiao',
+    start: [
+      'A Safira só existe nas Rotas Silenciosas. É a maior densidade energética que já medi, e talvez seja por isso que os Dreadnoughts patrulham justamente ali.',
+      'Quero cinquenta unidades. Só um Minerador Mk3 tira Safira. E do lado de lá não existe base: o porão volta cheio pelo portal, ou não volta.',
+    ],
+    goal: {mine: 'blue', count: 50}, text: 'Extraia 50 de Safira para análise', hint: 'Exige Minerador Mk3 · só nas Rotas Silenciosas, longe da chegada',
+    end: [
+      'Cinquenta. A leitura confirma: a Safira de lá vibra na mesma frequência que encontrei na Turquesa. Mais forte.',
+      ['huedro', 'A mesma frequência...'],
+      'Mais perto da fonte. E a fonte fica no fundo das Rotas Silenciosas, onde nenhum piloto chegou e voltou para contar.',
+      'As amostras ficam comigo. 12.000 créditos.',
+    ],
+    take: {blue: 50}, reward: {credits: 12000},
+  },
+  {
+    id: 'o-guardiao', title: 'O guardião', giver: 'huedro',
+    start: [
+      'Você sabe o que existe no fundo das Rotas Silenciosas, piloto. Todo piloto que foi até lá fala da mesma coisa.',
+      'O Leviatã.',
+      ['fabricio', 'Uma criatura do tamanho de uma estação, parada exatamente em cima da fonte da frequência. Isso não é coincidência, Comandante. É guarda.'],
+      'Então vamos ver o que ele guarda. Vá com a melhor nave que puder pagar. Ninguém derruba aquilo de primeira: quando o casco apertar, recue, conserte e volte. Ele não se recupera entre uma investida e outra.',
+    ],
+    goal: {kill: 'boss', count: 1}, text: 'Destrua o Leviatã', hint: 'No canto mais fundo das Rotas Silenciosas',
+    end: [
+      'Você conseguiu. A base inteira comemorou pelo rádio.',
+      ['fabricio', 'O chip que ele carregava emite a mesma frequência das amostras. Fraca, constante.'],
+      ['huedro', 'Como um sinal.'],
+      ['fabricio', 'Como um sinal de retorno. Eu ainda não sei para onde. Nem para quem.'],
+      '20.000 créditos, piloto. E obrigado. Agora as Rotas Silenciosas têm um piloto que foi até o fundo e voltou.',
+    ],
+    reward: {credits: 20000},
+  },
 ];
 const byId = new Map(MISSIONS.map(m => [m.id, m]));
 export const mission = (id: string) => byId.get(id);
 /** primeira missão de cada sequência, e o nome da sequência no menu de missões */
-const FIRST = {main: 'boas-vindas', side: 'o-sinal-perdido'};
-export const CHAINS = {main: 'Tutorial', side: 'Wuthering Heights'};
+const FIRST = {main: 'boas-vindas', side: 'o-sinal-perdido', ops: 'calibracao-mira'};
+export const CHAINS = {main: 'Tutorial', side: 'Wuthering Heights', ops: 'Operações da Base'};
 
 // ---------- motor ----------
-export type Track = 'main' | 'side';
+export type Track = 'main' | 'side' | 'ops';
 type Slot = { id: string; stage: QuestStage; n: number };
 // Progresso salvo antes das missões (o tutorial numerado, save.tut): convertido uma vez para o ponto equivalente.
 const LEGACY: Record<number, [string, QuestStage]> = {0: ['boas-vindas', 'offer'], 1: ['boas-vindas', 'active'], 2: ['boas-vindas', 'ready'],
@@ -291,13 +443,19 @@ function slot(track: Track): Slot | null {
     if (save.quest.stage !== 'done' && !byId.has(save.quest.id)) save.quest = {...DONE}; // missão que deixou de existir
     return save.quest;
   }
+  if (track === 'ops') { // operações da base: oferecidas quando o tutorial termina (ou é pulado)
+    if (!save.ops) { if (slot('main')!.stage !== 'done') return null; save.ops = {id: FIRST.ops, stage: 'offer', n: 0}; }
+    if (save.ops.stage !== 'done' && !byId.has(save.ops.id)) save.ops = {...DONE};
+    return save.ops;
+  }
   if (!save.side) save.side = {id: FIRST.side, stage: 'offer', n: 0}; // existe desde o começo: começa quando o piloto acha a nave
   if (save.side.stage !== 'done' && !byId.has(save.side.id)) save.side = {...DONE};
   if (save.side.stage === 'offer' && !byId.get(save.side.id)!.start.length) save.side = {...save.side, stage: 'active', n: 0}; // sem conversa de início: já em andamento
   return save.side;
 }
-const set = (track: Track, s: Slot) => { if (track === 'main') save.quest = s; else save.side = s; };
-const TRACKS: Track[] = ['main', 'side'];
+const set = (track: Track, s: Slot) => { if (track === 'main') save.quest = s; else if (track === 'ops') save.ops = s; else save.side = s; };
+/** a ordem de vez: na base fala primeiro o tutorial, depois as operações; a secundária é de campo */
+const TRACKS: Track[] = ['main', 'ops', 'side'];
 /** Sequência acompanhada (escolhida no menu de missões): o objetivo dela tem a vez no painel e no marcador. Não é salva. */
 export const pin: { track: Track | null } = {track: null};
 /** as sequências na ordem de vez: a acompanhada primeiro */
@@ -311,7 +469,7 @@ export const needsTalk = () => TRACKS.some(t => atBaseTalk(slot(t)));
 export const fieldTalk = () => TRACKS.find(t => { const q = slot(t); return q?.stage === 'ready' && byId.get(q.id)?.report === 'field'; });
 
 /** Algo aconteceu no jogo (a simulação e o hangar avisam): se for o que uma missão ativa pede, conta. */
-export type QuestEvent = { kill: EnemyKey } | { mine: OreKey; amount: number } | { buy: ModType } | { reach: PlaceId };
+export type QuestEvent = { kill: EnemyKey } | { mine: OreKey; amount: number } | { buy: ModType } | { reach: PlaceId } | { use: Skill };
 export function progress(ev: QuestEvent) {
   for (const t of TRACKS) {
     const q = slot(t), g = q && byId.get(q.id)?.goal;
@@ -319,7 +477,8 @@ export function progress(ev: QuestEvent) {
     const add = 'kill' in g && 'kill' in ev && ev.kill === g.kill ? 1
               : 'mine' in g && 'mine' in ev && ev.mine === g.mine ? ev.amount
               : 'buy' in g && 'buy' in ev && ev.buy === g.buy ? 1
-              : 'reach' in g && 'reach' in ev && ev.reach === g.reach ? 1 : 0;
+              : 'reach' in g && 'reach' in ev && ev.reach === g.reach ? 1
+              : 'use' in g && 'use' in ev && ev.use === g.use ? 1 : 0;
     if (!add) continue;
     q.n += add;
     if (q.n >= ('count' in g ? g.count : 1) - 1e-9) q.stage = 'ready';
@@ -492,5 +651,7 @@ export function replay(track: Track, id: string) {
   save.paid = [...new Set([...save.paid ?? [], ...chain.slice(0, q.stage === 'done' ? chain.length : chain.indexOf(q.id))])];
   set(track, {id, stage: 'offer', n: 0});
 }
+/** a sequência inteira de novo, desde a primeira missão (ferramenta de administrador: tools/missoes-piloto.ts) */
+export const restartTrack = (track: Track) => replay(track, FIRST[track]);
 /** pula a sequência principal inteira */
 export const skipAll = () => { save.quest = {...DONE}; };

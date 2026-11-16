@@ -23,6 +23,7 @@ export const ENGINES: Record<ModelKey, Vec3[]> = {
   interceptor: [[-.97, -.1, .26], [-.97, -.1, -.26]],           // as duas fuselagens grandes
   raider: [[-.98, -.05, 0]],                                    // feixe de bocais no centro da traseira
   dreadnought: [[-.63, .09, .65], [-.63, .09, -.65], [-.57, -.05, .19], [-.57, -.05, -.19]], // os quatro motores
+  ferrao: [[-.97, 0, 0]], // bocal na ponta da cauda fina
   drone: [], boss: [], station: [],
 };
 
@@ -38,5 +39,6 @@ export const HARD: Record<ModelKey, Vec3[]> = {
   drone: [[.5, .1, 0]], // frente da cúpula (posição para o drone.glb)
   dreadnought: pairs([[.55, .8], [.6, .3]]), // ao longo da frente larga do casco (posições para o dreadnought.glb)
   boss: pairs([[.7, .25], [.4, .45], [.1, .3]]), // espalhados pela cabeça larga (posições para o boss.glb)
+  ferrao: pairs([[.45, .12]]), // nas laterais da frente (posições para o ferrao.glb)
   station: [],
 };

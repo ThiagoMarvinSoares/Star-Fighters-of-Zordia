@@ -24,12 +24,13 @@ Regra geral: **conteúdo e regras ficam em `src/game/`, tela fica em `src/ui/`.*
 
 Com `report: 'field'`, a entrega não espera a base: a conversa abre sozinha, onde o piloto estiver, assim que o objetivo é cumprido. É o que permite uma história andar no meio do espaço.
 
-### Duas sequências
+### Três sequências
 
 - **Principal** (`save.quest`): começa pelo tutorial.
-- **Secundária** (`save.side`): existe desde o começo do jogo e começa por descoberta, quando o piloto acha a nave de Elyra nas Rotas Silenciosas. Ninguém manda o piloto lá. A primeira missão dela é `FIRST.side`, em `src/game/missions.ts`.
+- **Operações da Base** (`save.ops`): oferecida na base quando o tutorial termina (ou é pulado). Começa pela calibração dos sistemas da nave (um tutorial disfarçado) e segue com contratos até o Leviatã. A primeira missão é `FIRST.ops`.
+- **Secundária** (`save.side`): existe desde o começo do jogo e começa por descoberta, quando o piloto acha a nave de Elyra no canto mais afastado de Outer Space. Ninguém manda o piloto lá. A primeira missão dela é `FIRST.side`, em `src/game/missions.ts`.
 
-Cada sequência tem um nome no menu de missões, em `CHAINS`. As duas andam ao mesmo tempo e são salvas separadas. Na base, a principal tem a vez para conversar, e o painel mostra o objetivo da principal enquanto ela existir. Cada sequência tem uma missão por vez; para outra cadeia paralela, o motor precisaria de mais uma trilha em `Track`.
+Cada sequência tem um nome no menu de missões, em `CHAINS`. Elas andam ao mesmo tempo e são salvas separadas. A ordem de vez é `TRACKS`: na base fala primeiro o tutorial, depois as operações; o painel mostra o objetivo de quem tem a vez (ou da sequência acompanhada no menu). Cada sequência tem uma missão por vez; para outra cadeia paralela, acrescente uma trilha em `Track`, `FIRST`, `CHAINS`, `slot()`/`set()` e o campo salvo em `state.ts` (`parseSave` e `adopt`).
 
 `save.quest` e `save.side` têm o formato `{id, stage, n}` e vão junto com o progresso do piloto (navegador e servidor). `n` é quanto do objetivo já foi feito.
 
@@ -81,6 +82,7 @@ Acrescente um bloco em `MISSIONS`, em `src/game/missions.ts`, e aponte o `next` 
 | `{kill: 'drone', count: 3}` | um inimigo com essa `key` de modelo é destruído. `'drone'` vale para Drone e Drone Alfa; `'raider'` para Raider e Raider Elite; `'dreadnought'` para os dois Dreadnoughts; `'boss'` para o Leviatã |
 | `{mine: 'purple', count: 20}` | o feixe extrai esse minério (`purple` = Ametista, `cyan` = Turquesa, `blue` = Safira); conta frações |
 | `{buy: 'laser', count: 1}` | um módulo desse tipo é comprado no hangar (`laser`, `shield`, `engine`, `aim`, `missile`, `mining`, `chip`) |
+| `{use: 'auto', count: 3}` | o piloto usa um sistema da nave: `'auto'` = destrói um inimigo com a mira automática ligada; `'missile'` = lança um míssil; `'repair'` = o robô de reparo enche o casco. Os avisos saem de `src/game/sim.ts` |
 | `{reach: 'nave-elyra'}` | a nave entra no raio de um lugar de `PLACES` (conta ao entrar, de fora para dentro). O lugar ganha um anel no chão, um losango no minimapa e uma seta na borda da tela com a distância. Se o lugar fica noutro mapa, o marcador aponta o portal que leva até lá |
 
 Os lugares ficam em `PLACES`, em `src/game/missions.ts`: `{map, x, y, r}`. O minimapa tem uma grade de coordenadas (X para a direita, Y para baixo, a partir do canto superior esquerdo) e mostra, acima dele, a posição da nave e as coordenadas do lugar do objetivo ativo. Para um personagem falar ou a dica mostrar as coordenadas de um lugar, use `coords('id')` ("Rotas Silenciosas · X 7200 · Y 1950") ou `PLACES[id].x` e `.y` numa fala com crase. Os mapas ficam em `MAPS`, em `src/game/data.ts`:
@@ -115,6 +117,23 @@ Um terceiro valor segura a fala na tela por alguns segundos antes de liberar o b
 | `primeiro-laser` | Huedro | comprar um laser (abre o hangar) | o Huedro apresenta o Fabrício |
 | `amostras` | Fabrício | extrair 20 de Ametista (recebe o Minerador Mk1 ao começar) | entrega as 20 Ametistas, recebe 300 cr; fim da sequência |
 
+### Operações da Base
+
+| `id` | Quem passa | Objetivo | Entrega e recompensa |
+|---|---|---|---|
+| `calibracao-mira` | Fabrício | destruir 3 inimigos com a mira automática (T) | no campo; 300 cr |
+| `calibracao-misseis` | Fabrício | lançar 3 mísseis (recebe um Míssil Mk1 se não tiver) | no campo; 300 cr |
+| `calibracao-reparo` | Fabrício | encher o casco com o robô de reparo (recebe o Básico se não tiver) | no campo; 300 cr |
+| `calibracao-navegacao` | Fabrício | chegar a X 2400 · Y 2200, sem marcador (`find`) | no campo; 300 cr |
+| `patrulha` | Fabrício | destruir 10 Drones | na base; 1.200 cr |
+| `cascos-contaminados` | Fabrício | destruir 8 Raiders | na base; 3.000 cr (rotas gravadas apontam para portais mortos desde o Silêncio) |
+| `frequencias` | Fabrício | extrair 30 de Turquesa (exige Mk2) | entrega as 30; 3.500 cr (uma frequência presa no cristal) |
+| `sem-tripulacao` | Comandante | destruir 3 Dreadnoughts | na base; 10.000 cr (última ordem: "manter patrulha até novo contato") |
+| `densidade` | Fabrício | extrair 50 de Safira (exige Mk3) | entrega as 50; 12.000 cr (a mesma frequência, mais forte) |
+| `o-guardiao` | Comandante | destruir o Leviatã | na base; 20.000 cr (o chip emite a frequência, "como um sinal de retorno") |
+
+A frequência é um fio novo que liga os contratos aos mistérios da lore (`docs/LORE.md`, seção 9), sem resolvê-los.
+
 ### Sequência secundária: Wuthering Heights
 
 História gótica e melancólica, inspirada em *O Morro dos Ventos Uivantes*: Elyra, exploradora, morreu à deriva quando a nave despressurizou; Heathcliff, o companheiro, morreu na estação esperando por ela. Ela ainda tenta voltar e não sabe que os dois morreram. Nenhum dos dois aparece: tudo é contado por registros, transmissões, sensores e a porta da estação. **O fim não explica nada**: a porta abre, a transmissão para e a nave some. Depois, o Comandante e o Fabrício tentam entender: o Huedro pela lembrança (ele era cadete quando as buscas foram canceladas), o Fabrício pelos dados, com hipóteses que não fecham. **O farol é o centro:** Heathcliff o via aceso, Elyra nunca viu a luz; estavam perto um do outro, em realidades diferentes. A última leitura mostra o farol aceso numa estação sem energia, e o caso é arquivado sem conclusão. Não confirme se abrir a porta deixou Elyra entrar. Ninguém confirma o que aconteceu.
@@ -144,7 +163,7 @@ A tecla J, ou o botão à direita do inventário, abre o menu de missões (`src/
 
 "Acompanhar" uma sequência põe o objetivo dela na vez do painel e do marcador do mapa (`pin.track`). Isso não é salvo: ao recarregar, a principal volta a ter a vez.
 
-O nome de cada sequência abre e fecha a lista das missões dela. Ao lado do nome, um botão ("Refazer" na sequência concluída, "Recomeçar" na que está em andamento) volta a sequência à primeira missão (`replay()`), abre a conversa de início na hora, onde o piloto estiver, e a história segue dali como da primeira vez. **A recompensa só é paga uma vez:** ao voltar, as missões já entregues da sequência entram em `save.paid`, e a entrega de uma missão que está lá não cobra minério (`take`) nem paga (`reward`). Os presentes (`gift`) já não se repetem se o piloto tiver um item do mesmo tipo.
+O nome de cada sequência abre e fecha a lista das missões dela. Ao lado do nome, **só rodando em localhost** (testes do autor), um botão ("Refazer" na sequência concluída, "Recomeçar" na que está em andamento) volta a sequência à primeira missão (`replay()`), abre a conversa de início na hora, onde o piloto estiver, e a história segue dali como da primeira vez. **Os jogadores não têm esse botão.** Para refazer ou zerar as missões de um jogador, o administrador usa `tools/missoes-piloto.ts`, direto na conta dele: `node --env-file=.env.local tools/missoes-piloto.ts <login> ver | refazer tutorial|operacoes|wuthering | zerar [--com-recompensas] [--gravar]`. Sem `--gravar`, só mostra como ficaria; faça com o piloto fora do jogo, senão o navegador dele grava por cima. **A recompensa só é paga uma vez:** ao voltar, as missões já entregues da sequência entram em `save.paid`, e a entrega de uma missão que está lá não cobra minério (`take`) nem paga (`reward`). Os presentes (`gift`) já não se repetem se o piloto tiver um item do mesmo tipo.
 
 ## Cenário de missão
 
@@ -198,6 +217,8 @@ Objetos que existem no mapa por causa de uma missão ficam em `scenery()`: cada 
 
 ## Lore já estabelecida
 
+A lore completa, escrita pelo autor, está em [`LORE.md`](LORE.md). O resumo abaixo é o que as missões já usam.
+
 - O jogo se passa no setor **Outer Space**, ao redor da **Base Outer Space**, uma estação em anel da **Aliança de Zordia**.
 - Na área da base o piloto está seguro e o casco é consertado; quem chega ainda em combate não tem proteção.
 - **Drones:** criaturas orgânicas que só atacam quem mexe com elas; ficam perto da base.
@@ -209,5 +230,5 @@ Objetos que existem no mapa por causa de uma missão ficam em `scenery()`: cada 
 
 - `npm test` precisa passar. O bloco "missões" confere que todo `next` aponta para uma missão que existe; acrescente nele a missão nova se ela tiver regra diferente.
 - **Não renomeie nem remova** missões publicadas: o `id` está no progresso dos jogadores. Se uma missão sumir do código, quem estava nela tem a sequência dada como terminada.
-- "Recomeçar"/"Refazer" no menu de missões (J) volta a sequência ao início, bom para testar as conversas.
+- "Recomeçar"/"Refazer" no menu de missões (J), só em localhost, volta a sequência ao início, bom para testar as conversas.
 - Neste projeto, **commit e push só com aprovação**: o push no `main` publica na Vercel na hora.

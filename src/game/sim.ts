@@ -187,6 +187,7 @@ export function update(dt: number) {
   if (safe) p.hp = Math.min(st.maxHp, p.hp + st.maxHp * .2 * dt);
   else if (p.fixing) {
     p.hp = Math.min(st.maxHp, p.hp + st.maxHp * st.repair / 100 * dt);
+    if (p.hp >= st.maxHp) progress({use: 'repair'}); // o robô encheu o casco (missão de calibração)
   }
 
   // ---------- armas do jogador ----------
@@ -265,7 +266,7 @@ export function update(dt: number) {
     p.launch = null;
     if (m && c && c.n > 0 && t && p.target === t && !inBase && dist(p, t) <= RANGE) {
       const left = p.mleft;
-      c.n--; c.t = MISSILE_CD; p.mleft = !left; t.hostile = true; p.lastShot = now;
+      c.n--; c.t = MISSILE_CD; p.mleft = !left; t.hostile = true; p.lastShot = now; progress({use: 'missile'});
       // ponto de fixação 1 = lado esquerdo da nave, 0 = direito (os pares de HARD são espelhados); a faixa de voo
       // acompanha o lado, para dois mísseis seguidos irem lado a lado e não em fila
       shoot(p, st.r, save.ship, left ? 1 : 0, t, Math.round(MODS[m].val * st.boost), '#fa4', 0, m, rand() >= st.acc, true, (left ? -1 : 1) * LANE / 2);
@@ -354,7 +355,7 @@ export function update(dt: number) {
         bossAt[world.map] = now + boss.respawn; save.boss = {...save.boss, [world.map]: Date.now() + boss.respawn * 1000};
         drops.push({x: tg.x, y: tg.y, item: BOSS_DROP});
       }
-      save.credits += tg.t.reward; progress({kill: tg.t.key}); persist();
+      save.credits += tg.t.reward; progress({kill: tg.t.key}); if (p.auto) progress({use: 'auto'}); persist();
       float(tg, '+' + tg.t.reward + ' cr', '#fd4', 1.5);
     }
   }

@@ -13,6 +13,13 @@ pets/drone.glb
   Alterações: removidos os dados que o jogo não usa (tools/slim-glb.py) e geometria comprimida (tools/compress-glb.mjs).
   No jogo, é o drone do robô de reparo.
 
+ships/ferrao.glb
+  "Space Ship", de Comrade1280 (https://sketchfab.com/comrade1280)
+  Licença: CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
+  Fonte: https://sketchfab.com/3d-models/space-ship-63ce372c1aa843e98bf1548109e055d8
+  Alterações: removidos os dados que o jogo não usa (tools/slim-glb.py), casco nivelado (vinha inclinado ~11° de
+  nariz para baixo) e geometria comprimida (tools/compress-glb.mjs). No jogo, é o Ferrão, lacaio da Poliveira.
+
 ships/scout.glb
   "LIGHT FIGHTER SPACESHIP - FREE -", de Kerem Kavalci (https://sketchfab.com/Keremz)
   Licença: Sketchfab Standard (https://sketchfab.com/licenses) — pode ser usado dentro de um projeto, mas o arquivo

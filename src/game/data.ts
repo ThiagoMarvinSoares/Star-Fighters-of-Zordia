@@ -44,7 +44,7 @@ export const CLEAR = 1400;
 export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip' | 'repair';
 export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor';
 export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1' | 'C2' | 'R0' | 'R1' | 'R2' | 'R3';
-export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss';
+export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss' | 'ferrao';
 /** Toda nave ou inimigo precisa de um modelo 3D e pontos de tiro com esta chave em models.ts. */
 export type ModelKey = ShipKey | EnemyKey | 'station';
 
@@ -184,6 +184,9 @@ export const PICKUP_R = 60;
 // Drone Elite: só nas Rotas Silenciosas, entre o Drone Alfa e o Raider. Fica fora de ENEMIES, como o chefe: não nasce
 // em Outer Space nem entra nas contas de balanceamento de lá. Conta como 'drone' nos objetivos de missão.
 export const DRONE_ELITE: EnemyDef = {key: 'drone', name: 'Drone Elite', hp: 600, sh: 300, dmg: 32, speed: 190, reward: 400, r: 22, color: '#ffe066', aggro: false, organic: true};
+// Ferrão: o lacaio básico da Poliveira. Nave fina e comprida, de casco escuro. Ainda NÃO está no jogo: não entra em
+// nenhum mapa (MAPS) nem em ENEMIES. Os números são provisórios, na faixa do Raider; acerte ao pôr no jogo.
+export const FERRAO: EnemyDef = {key: 'ferrao', name: 'Ferrão', hp: 900, sh: 500, dmg: 50, speed: 230, reward: 600, r: 22, color: '#c86bff', aggro: true};
 export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700, missile: true, attacks: ['line', 'cone', 'homing'], enrage: true};
 
 // ---------- mineração ----------

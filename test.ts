@@ -1,6 +1,6 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME, DRONE_ELITE } from './src/game/data.ts';
+import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME, DRONE_ELITE, FERRAO } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
 import { parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
@@ -420,7 +420,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
 // (save.tut) continua do mesmo ponto; e todas as missões apontam para missões que existem
 {
   reset();
-  const keep = {quest: save.quest, side: save.side, credits: save.credits, mods: [...save.mods], inv: [...save.inv], cargo: {...save.cargo}};
+  const keep = {quest: save.quest, side: save.side, ops: save.ops, credits: save.credits, mods: [...save.mods], inv: [...save.inv], cargo: {...save.cargo}};
   delete save.side;
   for (const m of MISSIONS) assert(!m.next || mission(m.next), `${m.id}: a próxima missão não existe`);
   const lines = () => talkNow()!.lines.map(l => l[0]);
@@ -445,7 +445,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   save.cargo.purple = 25; const cr0 = save.credits;
   assert.equal(talkDone().credits, 300);
   assert(save.cargo.purple === 5 && save.credits === cr0 + 300 && questNow().stage === 'done', 'amostras entregues, pagamento, fim da sequência');
-  assert(!talkNow() && !needsTalk(), 'a secundária não tem conversa na base: começa quando o piloto acha a nave');
+  assert(talkNow()?.track === 'ops' && talkNow()!.lines[0][0] === 'fabricio', 'acabado o tutorial, o Fabrício oferece as operações da base (a secundária não tem conversa na base)');
   // progresso de antes das missões: cada passo antigo vira o ponto equivalente
   for (const [tut, id, stage, n] of [[1, 'boas-vindas', 'active', 2], [4, 'primeiro-laser', 'ready', 0], [5, '', 'done', 0], [6, 'amostras', 'active', 7]] as const) {
     delete save.quest; save.tut = tut; save.tutN = 2;
@@ -456,14 +456,46 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert.equal(parseSave({credits: 0, ship: 'scout', mods: [], quest: {id: 'x', stage: 'talvez', n: 1}})!.quest, undefined);
   save.quest = keep.quest; save.credits = keep.credits; Object.assign(save.cargo, keep.cargo);
   if (keep.side) save.side = keep.side; else delete save.side;
+  if (keep.ops) save.ops = keep.ops; else delete save.ops;
   save.mods.splice(0, save.mods.length, ...keep.mods); save.inv.splice(0, save.inv.length, ...keep.inv);
 }
 
 // missão secundária "Wuthering Heights": começa por descoberta (a nave à deriva está nas Rotas Silenciosas desde o começo,
+
+// operações da base: oferecidas quando o tutorial termina; a calibração ensina cada sistema (objetivos de usar a mira
+// automática, os mísseis e o robô de reparo, e chegar a coordenadas sem marcador), e emenda nos contratos
+{
+  const keep = {quest: save.quest, ops: save.ops, side: save.side, credits: save.credits, mods: [...save.mods], inv: [...save.inv]};
+  save.side = {id: '', stage: 'done', n: 0};
+  save.quest = {id: 'amostras', stage: 'active', n: 0}; delete save.ops;
+  assert(questNow('ops').stage === 'done' && !talkNow(), 'antes de o tutorial terminar, nada de operações');
+  save.quest = {id: '', stage: 'done', n: 0};
+  assert(needsTalk() && talkNow()!.track === 'ops', 'tutorial terminado (ou pulado): o Fabrício tem serviço na base');
+  talkDone('ops');
+  for (const [use, n] of [['auto', 3], ['missile', 3], ['repair', 1]] as const) {
+    assert.equal(questGoal()!.hint.length > 0, true);
+    for (let i = 0; i < n; i++) progress({use: 'auto'}), progress({use: use}); // eventos de outro sistema não contam a mais
+    assert(questNow('ops').stage === 'ready' && fieldTalk() === 'ops', `calibração de ${use}: a conversa abre ali mesmo`);
+    talkDone('ops');
+  }
+  assert.equal(questNow('ops').id, 'calibracao-navegacao');
+  assert(!questTarget() && questGoal()!.goal.includes(`X ${PLACES['baliza'].x}`), 'navegação: sem marcador, só as coordenadas');
+  arrive(HOME, PLACES['baliza'].x, PLACES['baliza'].y); talkDone('ops'); arrive(HOME, 0, 0);
+  assert(questNow('ops').id === 'patrulha' && questNow('ops').stage === 'active', 'depois da calibração, os contratos');
+  for (let i = 0; i < 10; i++) progress({kill: 'drone'});
+  assert(questNow('ops').stage === 'ready' && needsTalk(), 'contrato cumprido: entrega na base');
+  const c0 = save.credits; talkDone('ops'); assert.equal(save.credits, c0 + 1200);
+  assert.deepEqual(parseSave({credits: 0, ship: 'scout', mods: [], ops: {id: 'patrulha', stage: 'active', n: 3}})!.ops, {id: 'patrulha', stage: 'active', n: 3});
+  save.quest = keep.quest; save.credits = keep.credits; save.mods.splice(0, save.mods.length, ...keep.mods); save.inv.splice(0, save.inv.length, ...keep.inv);
+  if (keep.ops) save.ops = keep.ops; else delete save.ops;
+  if (keep.side) save.side = keep.side; else delete save.side;
+}
+
 // e a primeira missão fica escondida até o piloto chegar nela); objetivos de chegar a um lugar; conversas de campo que
 // abrem sozinhas; o cenário (nave de Elyra, estação) muda com o progresso; e a escolha da porta
 {
-  const keep = {quest: save.quest, side: save.side, credits: save.credits};
+  const keep = {quest: save.quest, side: save.side, ops: save.ops, credits: save.credits};
+  save.ops = {id: '', stage: 'done', n: 0}; // só a secundária em jogo
   arrive('silent', 0, 0); // nenhum lugar "ocupado" de antes
   save.quest = {id: 'amostras', stage: 'active', n: 0}; delete save.side;
   const pl = (id: keyof typeof PLACES) => PLACES[id];
@@ -526,10 +558,10 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   arrive(HOME, 0, 0);
   assert.deepEqual(parseSave({credits: 0, ship: 'scout', mods: [], side: {id: 'a-estacao', stage: 'active', n: 0}})!.side, {id: 'a-estacao', stage: 'active', n: 0});
   // menu de missões: as duas sequências, tudo concluído; e acompanhar a secundária dá a vez a ela no painel
-  assert.deepEqual(journal().map(c => [c.chain, c.items.map(i => i.status)]), [['Tutorial', ['done', 'done', 'done']], ['Wuthering Heights', ['done', 'done', 'done', 'done', 'done']]]);
+  assert.deepEqual(journal().map(c => [c.chain, c.items.map(i => i.status)]), [['Tutorial', ['done', 'done', 'done']], ['Operações da Base', MISSIONS.filter(m => m.id.startsWith('calibracao') || ['patrulha', 'cascos-contaminados', 'frequencias', 'sem-tripulacao', 'densidade', 'o-guardiao'].includes(m.id)).map(() => 'done')], ['Wuthering Heights', ['done', 'done', 'done', 'done', 'done']]]);
   save.side = {id: 'a-estacao', stage: 'active', n: 0}; save.quest = {id: 'amostras', stage: 'active', n: 7};
-  assert.deepEqual(journal()[1].items.map(i => [i.id, i.status, i.goal]), [['o-sinal-perdido', 'done', undefined], ['a-estacao', 'active', 'Vá até a estação abandonada']], 'missões futuras não aparecem');
-  assert.equal(journal()[0].items.at(-1)!.goal, 'Extraia 20 de Ametista para análise (7/20)');
+  assert.deepEqual(journal().find(c => c.track === 'side')!.items.map(i => [i.id, i.status, i.goal]), [['o-sinal-perdido', 'done', undefined], ['a-estacao', 'active', 'Vá até a estação abandonada']], 'missões futuras não aparecem');
+  assert.equal(journal().find(c => c.track === 'main')!.items.at(-1)!.goal, 'Extraia 20 de Ametista para análise (7/20)');
   assert(questGoal()!.goal.startsWith('Extraia'), 'sem acompanhar: o painel mostra a principal');
   assert.deepEqual(questTarget(), PLACES['estacao-abandonada'], 'a estação tem marcador');
   assert.equal(questPlace(), 'estacao-abandonada');
@@ -559,6 +591,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   if (paid0) save.paid = paid0; else delete save.paid;
   arrive('silent', 0, 0); save.quest = keep.quest; save.credits = keep.credits;
   if (keep.side) save.side = keep.side; else delete save.side;
+  if (keep.ops) save.ops = keep.ops; else delete save.ops;
 }
 
 // robô de reparo: fora da base, o casco só se recupera com ele: sozinho, REPAIR_DELAY s depois do último tiro ou dano, ou
@@ -793,6 +826,8 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   for (const e of fresh) assert(Math.hypot(e.x - p.x, e.y - p.y) >= CLEAR - 5, 'inimigo renasceu perto do jogador');
 }
 
+// o Ferrão (lacaio da Poliveira) já tem modelo e pontos de tiro, mas ainda não está em nenhum mapa
+assert(HARD.ferrao.length && ENGINES.ferrao.length && !keys(MAPS).some(k => [...MAPS[k].enemies, ...(MAPS[k].guards ?? []).map(g => g.def), ...(MAPS[k].boss ? [MAPS[k].boss!.def] : [])].includes(FERRAO)));
 // dados dos mapas: o inicial tem base, e todo portal leva a um ponto dentro do mapa de destino, longe dos portais de lá
 assert(M.base, 'o mapa inicial precisa de base');
 for (const k of keys(MAPS)) for (const g of MAPS[k].portals) {

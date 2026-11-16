@@ -28,6 +28,8 @@ export interface Save {
   quest?: { id: string; stage: QuestStage; n: number };
   /** missão atual da sequência secundária (oferecida quando a principal termina), no mesmo formato */
   side?: { id: string; stage: QuestStage; n: number };
+  /** missão atual da sequência de operações da base (calibração e contratos), oferecida quando o tutorial termina */
+  ops?: { id: string; stage: QuestStage; n: number };
   /** missões cuja recompensa já foi paga: refazer uma delas (menu de missões) não paga de novo */
   paid?: string[];
   /** do tutorial antigo, de antes das missões: só lidos uma vez, para continuar do mesmo ponto (ver game/missions.ts) */
@@ -171,6 +173,7 @@ export function parseSave(s: any): Save | null {
                   && {boss: Object.fromEntries(Object.entries(s.boss).filter(([k, v]) => Object.hasOwn(MAPS, k) && Number.isFinite(v)))}),
               ...(okQuest(s.quest) && {quest: {id: s.quest.id, stage: s.quest.stage, n: +s.quest.n}}),
               ...(okQuest(s.side) && {side: {id: s.side.id, stage: s.side.stage, n: +s.side.n}}),
+              ...(okQuest(s.ops) && {ops: {id: s.ops.id, stage: s.ops.stage, n: +s.ops.n}}),
               ...(Array.isArray(s.paid) && {paid: s.paid.filter((k: unknown) => typeof k === 'string').slice(0, 200)}),
               ...(Number.isInteger(s.tut) && s.tut >= 0 && {tut: s.tut}), ...(Number.isInteger(s.tutN) && s.tutN >= 0 && {tutN: s.tutN})};
     }
@@ -221,7 +224,7 @@ export const rocks: Rock[] = [], drops: Drop[] = [], strikes: Strike[] = [];
 export function adopt(raw: unknown) {
   const got = parseSave(raw);
   if (!got) return false;
-  delete save.pos; delete save.boss; delete save.quest; delete save.side; delete save.paid; // o que o progresso novo não trouxer não pode sobrar do antigo
+  delete save.pos; delete save.boss; delete save.quest; delete save.side; delete save.ops; delete save.paid; // o que o progresso novo não trouxer não pode sobrar do antigo
   Object.assign(save, got);
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} // sem passar por store(): a posição é a do progresso, não a de agora
   const st = stats(); p.hp = st.maxHp; p.sh = st.maxSh; // quem chama segue com resume() (sim.ts), que põe a nave onde ela estava
