@@ -49,7 +49,7 @@ export const LEASH = 1300;
 export const CLEAR = 1400;
 
 export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip' | 'repair' | 'pet';
-export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor' | 'northstar';
+export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor' | 'northstar' | 'astraeus';
 export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1' | 'C2' | 'R0' | 'R1' | 'R2' | 'R3' | 'P1';
 export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss' | 'ferrao' | 'furia';
 /** Toda nave ou inimigo precisa de um modelo 3D e pontos de tiro com esta chave em models.ts. */
@@ -121,8 +121,10 @@ export const SHIPS: Record<ShipKey, ShipDef> = {
   cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1, repair: 1, pet: 2}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
   // tier 4: a vida do Cruiser, bem mais rápida, com um escudo e um míssil a mais que ele
   interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1, pet: 3}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
-  // tier 5: a próxima nave do jogador. Ainda fora da loja (soon); números provisórios, acima da Interceptor.
-  northstar: {name: 'Northstar', slots: {laser: 12, shield: 5, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1, pet: 4}, r: 30, hp: 18000, speed: 290, cost: 120000, cargo: 300, soon: true},
+  // tier 5, em duas versões pelo mesmo preço (números provisórios, acima da Interceptor). A Northstar é a equilibrada;
+  // a Astraeus, a variante de ataque: dois lasers e 40 de velocidade a mais, com menos vida e pouco mais da metade do porão.
+  northstar: {name: 'Northstar', slots: {laser: 12, shield: 5, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1, pet: 4}, r: 30, hp: 18000, speed: 290, cost: 95000, cargo: 300},
+  astraeus: {name: 'Astraeus', slots: {laser: 14, shield: 5, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1, pet: 4}, r: 30, hp: 14000, speed: 330, cost: 95000, cargo: 180},
 };
 /** as naves à venda, na ordem da progressão (sem as que ainda não chegaram: ShipDef.soon) */
 export const FLEET = (Object.keys(SHIPS) as ShipKey[]).filter(k => !SHIPS[k].soon);
@@ -183,7 +185,7 @@ export const MODS: Record<ModKey, ModDef> = {
   // P.E.T.: um drone de combate que voa atrás da nave e atira junto com ela, no mesmo alvo e na mesma cadência dos
   // lasers; erra como eles. Cada P.E.T. equipado voa e atira por conta própria. Slots: o Scout não tem; da Corvette em
   // diante, um a mais por nave. Só existe este, que começa no nível 1 e sobe sozinho (PET_LEVELS); val = dano do nível 1.
-  P1: {name: 'P.E.T.', type: 'pet', val: 10, cost: 2000, model: 'pet1', effect: 'Atira junto com a nave; sobe de nível destruindo inimigos e cumprindo missões'},
+  P1: {name: 'P.E.T.', type: 'pet', val: 8, cost: 2000, model: 'pet1', effect: 'Atira junto com a nave; sobe de nível destruindo inimigos e cumprindo missões'},
 };
 /** P.E.T.s em voo: acima da nave, em formação. r = tamanho (como o r das naves), h = altura acima da nave, turn = quão
  *  rápido a formação acompanha a nave quando ela vira (por segundo; andando, eles vão junto, sem atraso).
@@ -196,13 +198,15 @@ export const PET = {r: 10, gap: 40, h: 40, turn: 8,
 /** Níveis do P.E.T. O jogador ganha experiência de P.E.T. enquanto tem um equipado: cada inimigo destruído vale a
  *  recompensa dele, e cada missão entregue, o pagamento dela. O nível vale para todos os P.E.T.s do jogador.
  *  xp = experiência total para chegar ao nível; dmg = % do dano da nave (a soma dos lasers, já com o chip de dano) em
- *  cada salva de cada P.E.T.; model = public/models/pets/<model>.glb. Números provisórios, a balancear: a ideia é cada
- *  nível chegar mais ou menos com uma nave nova (Cruiser, Interceptor, depois). */
+ *  cada salva de cada P.E.T.; model = public/models/pets/<model>.glb. Ritmo (medido no modelo de economia do teste, com
+ *  o primeiro P.E.T. comprado na Corvette): nível 2 antes do Cruiser, nível 3 por volta da Interceptor, e o nível 4 é a
+ *  meta do fim do jogo (cerca de 30 min de caça com a renda do tier 5). Com 4 P.E.T.s no nível 4, a nave ganha +80% de
+ *  dano: eles pesam, mas não dobram a nave. */
 export const PET_LEVELS = [
-  {xp: 0,      dmg: 10, model: 'pet1'},
-  {xp: 20000,  dmg: 20, model: 'pet2'},
-  {xp: 100000, dmg: 30, model: 'pet3'},
-  {xp: 300000, dmg: 40, model: 'pet4'},
+  {xp: 0,      dmg: 8,  model: 'pet1'},
+  {xp: 20000,  dmg: 12, model: 'pet2'},
+  {xp: 120000, dmg: 16, model: 'pet3'},
+  {xp: 450000, dmg: 20, model: 'pet4'},
 ];
 /** pasta de cada tipo de módulo dentro de public/models/ */
 export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining', chip: 'chips', repair: 'pets', pet: 'pets'};
@@ -227,9 +231,10 @@ export const ENEMIES: EnemyDef[] = [
 // Chefe: um só no mapa dele, rondando um ponto fixo; volta depois de destruído (posição e tempo ficam no mapa, em MAPS).
 // Fica fora de ENEMIES: não nasce por sorteio nem entra na conta de renda do teste de economia. É o objetivo de fim de
 // jogo: enorme, lento e com muita vida. Alcança mais longe que os lasers do jogador (RANGE), então não dá para vencê-lo
-// só mantendo distância. Está calibrado para ser uma luta apertada: a última nave, com tudo Mk3, vence sozinha numa
-// investida só, mas com menos de 10% da vida sobrando; a nave anterior, igualmente equipada, não consegue de uma vez
-// (o teste confere as duas contas).
+// só mantendo distância. Está calibrado para ser uma luta apertada no fim do jogo: uma nave de tier 5 com tudo Mk3 e os
+// P.E.T.s no nível 3 vence sozinha numa investida só, com uns 20% de folga (a Astraeus, mais frágil, um pouco menos);
+// com os P.E.T.s no nível 4 sobra mais. A Interceptor, igualmente equipada, não consegue de uma vez (o teste confere as
+// contas).
 /** o que o chefe solta ao ser destruído: um cubo laranja no lugar onde ele caiu, com este item dentro */
 export const BOSS_DROP: ModKey = 'C2';
 /** distância para recolher um espólio: é só passar por cima */
@@ -243,7 +248,7 @@ export const FERRAO: EnemyDef = {key: 'ferrao', name: 'Ferrão', hp: 900, sh: 50
 // Fúria: a nave da Poliveira. Casco em losango com asas soltas, flutuando em volta. Também ainda NÃO está no jogo;
 // números provisórios, de chefe (acima do Leviatã), para quando ela entrar.
 export const FURIA: EnemyDef = {key: 'furia', name: 'Fúria', hp: 120000, sh: 40000, dmg: 500, speed: 60, reward: 60000, r: 140, color: '#ff4d6d', aggro: true, range: 750, missile: true, attacks: ['line', 'cone', 'homing'], enrage: true};
-export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700, missile: true, attacks: ['line', 'cone', 'homing', 'burst'], enrage: true};
+export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 131000, sh: 29000, dmg: 560, speed: 45, reward: 64000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700, missile: true, attacks: ['line', 'cone', 'homing', 'burst'], enrage: true};
 
 // ---------- mineração ----------
 // Asteroides espalhados pelo mapa guardam minério. Clicar num deles, com um minerador equipado e a nave a até

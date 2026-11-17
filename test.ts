@@ -250,7 +250,7 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   Object.assign(save, keep); if (!keep.petInfo) delete save.petInfo;
 }
 // slots de P.E.T.: o Scout não tem; da Corvette em diante, um a mais por nave
-assert.deepEqual(FLEET.map(k => SHIPS[k].slots.pet), [0, 1, 2, 3]);
+assert.deepEqual(FLEET.map(k => SHIPS[k].slots.pet), [0, 1, 2, 3, 4, 4]);
 // todo P.E.T. tem os pontos de tiro do modelo dele
 for (const l of PET_LEVELS) assert(PET_GUNS[l.model]?.length, l.model);
 assert.deepEqual(keys(MODS).filter(k => MODS[k].type === 'pet'), ['P1'], 'só se compra o P.E.T. do nível 1');
@@ -854,19 +854,21 @@ assert.deepEqual(keys(MODS).filter(k => MODS[k].type === 'pet'), ['P1'], 'só se
   p.hp = stats().maxHp; shots.length = 0;
 }
 
-// chefe, no papel: a última nave com tudo Mk3 vence sozinha numa investida, por pouco; a penúltima, igualmente equipada,
-// não consegue de uma vez. Mexeu na vida ou no dano do chefe, nas naves ou nos itens Mk3? Esta conta diz se ainda vale.
+// chefe, no papel: uma nave de tier 5 com tudo Mk3 e os P.E.T.s no nível 3 vence sozinha numa investida, com folga curta; a
+// Interceptor, igualmente equipada, não consegue de uma vez. Mexeu na vida ou no dano do chefe, nas naves, nos itens Mk3
+// ou nos níveis do P.E.T.? Esta conta diz se ainda vale.
 {
-  const duel = (ship: ShipKey) => { // quantas vezes o tempo que a nave aguenta cobre o tempo que ela leva para matar
-    const s = SHIPS[ship].slots, acc = Math.min(1, ACCURACY + MODS.A3.val / 100);
-    const dps = (s.laser * MODS.L3.val + s.missile * MODS.M3.val / MISSILE_CD) * acc; // lasers + um míssil por recarga
+  const duel = (ship: ShipKey, lv = 2) => { // quantas vezes o tempo que a nave aguenta cobre o tempo que ela leva para matar
+    const s = SHIPS[ship].slots, acc = Math.min(1, ACCURACY + MODS.A3.val / 100), pets = 1 + s.pet * PET_LEVELS[lv].dmg / 100;
+    const dps = (s.laser * MODS.L3.val * pets + s.missile * MODS.M3.val / MISSILE_CD) * acc; // lasers (e os P.E.T.s) + um míssil por recarga
     const burst = s.missile * MISSILE_CHARGES * MODS.M3.val * acc;                    // as cargas que já começam prontas
     const kill = (BOSS.hp + BOSS.sh - burst) / dps, last = (SHIPS[ship].hp + s.shield * MODS.S3.val) / (BOSS.dmg / 1.3); // 1,3 s = ciclo de tiro dos inimigos
     return last / kill;
   };
-  const ships = FLEET, top = ships[ships.length - 1], second = ships[ships.length - 2];
-  assert(duel(top) > 1.03 && duel(top) < 1.12, `${top} contra o chefe tem de ser apertado: aguenta ${duel(top).toFixed(2)}x o tempo de matar`);
-  assert(duel(second) < 1, `${second} não deveria vencer de uma vez: ${duel(second).toFixed(2)}x`);
+  for (const k of ['northstar', 'astraeus'] as const)
+    assert(duel(k) > 1.1 && duel(k) < 1.3, `${k} (P.E.T.s nível 3) contra o chefe tem de ter folga curta: aguenta ${duel(k).toFixed(2)}x o tempo de matar`);
+  assert(duel('northstar', 3) > duel('northstar'), 'P.E.T.s no nível 4 dão mais folga');
+  assert(duel('interceptor', 3) < 1, `a Interceptor não deveria vencer de uma vez, nem com P.E.T.s no nível 4: ${duel('interceptor', 3).toFixed(2)}x`);
 }
 
 // chefe: um só, rondando o ponto dele; destruído, paga a recompensa e só volta depois de BOSS_RESPAWN segundos
@@ -961,9 +963,12 @@ assert.deepEqual(keys(MODS).filter(k => MODS[k].type === 'pet'), ['P1'], 'só se
   for (const e of fresh) assert(Math.hypot(e.x - p.x, e.y - p.y) >= CLEAR - 5, 'inimigo renasceu perto do jogador');
 }
 
-// a Northstar (próxima nave do jogador) e o Cruzador UNSA (NPC) já estão no código, mas fora do jogo
-assert(SHIPS.northstar.soon && !FLEET.includes('northstar') && FLEET.at(-1) === 'interceptor', 'a Northstar ainda não está à venda');
-assert(SHIPS.northstar.cost > SHIPS.interceptor.cost && SHIPS.northstar.hp > SHIPS.interceptor.hp, 'e vem depois da Interceptor');
+// tier 5: a Northstar e a Astraeus, à venda depois da Interceptor, pelo mesmo preço. A Astraeus é a variante de ataque:
+// mais lasers e mais velocidade, menos vida e menos porão. O Cruzador UNSA (NPC) já está no código, mas fora do jogo
+assert.deepEqual(FLEET.slice(-3), ['interceptor', 'northstar', 'astraeus']);
+assert(SHIPS.northstar.cost > SHIPS.interceptor.cost && SHIPS.northstar.hp > SHIPS.interceptor.hp, 'a Northstar vem depois da Interceptor');
+{ const n = SHIPS.northstar, c = SHIPS.astraeus;
+  assert(c.cost === n.cost && c.slots.laser > n.slots.laser && c.speed > n.speed && c.hp < n.hp && c.cargo < n.cargo, 'a Astraeus troca vida e porão por fogo e velocidade'); }
 assert(NPCS.unsa.r > MAPS.silent.boss!.def.r * 2, 'o Cruzador UNSA é enorme');
 // NPCs: o Cruzador UNSA anda bem devagar pela rota dele em Outer Space, longe da base; é sólido: não deixa nada passar
 // por dentro (nem a nave do jogador, nem inimigos) e nada nasce dentro dele
