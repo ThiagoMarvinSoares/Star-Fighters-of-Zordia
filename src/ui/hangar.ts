@@ -104,35 +104,48 @@ const cell = (from: From, i: number, k: ModKey) => { const m = MODS[k], pet = pe
   return `<button class="cell t-${m.type}${sel?.from === from && sel.i === i ? ' on' : ''}"
   data-from="${from}" data-i="${i}" title="${pet ? esc(petLabel(pet)) : m.name} · ${effect(m, xp)}">${pic(k, xp)}</button>`; };
 const empties = (n: number) => '<span class="cell empty"></span>'.repeat(Math.max(0, n));
-// Grupos recolhíveis (nave e inventário): clicar no título esconde ou mostra as casas. Não é salvo: ao recarregar a
-// página, tudo volta aberto. id = 'mods-<tipo>' ou 'inv-<tipo>'; lock = título sem o que recolher (grupo vazio).
-const folded = new Set<string>();
-const head = (id: string, t: ModType, n: string | number, lock = false) =>
-  `<h4><button class="fold${folded.has(id) ? ' shut' : ''}" data-fold="${id}" ${lock ? 'disabled' : `title="${folded.has(id) ? 'Mostrar' : 'Recolher'}"`}>${svg(I.right)}${SLOT[t]}<em>${n}</em></button></h4>`;
+// Grupos recolhíveis (nave e inventário): clicar no título esconde ou mostra as casas. Cada lista começa com o primeiro
+// grupo aberto e os outros fechados; opened guarda o que o jogador abriu ou fechou (não é salvo: ao recarregar a
+// página, volta ao começo). id = 'mods-<tipo>', 'inv-<tipo>' ou 'inv-ore'; lock = título sem o que recolher (grupo vazio).
+const opened = new Map<string, boolean>();
+const shut = (id: string, first: boolean) => !(opened.get(id) ?? first);
+const head = (id: string, t: ModType, n: string | number, first: boolean, lock = false) =>
+  `<h4><button class="fold${shut(id, first) ? ' shut' : ''}" data-fold="${id}" ${lock ? 'disabled' : `title="${shut(id, first) ? 'Mostrar' : 'Recolher'}"`}>${svg(I.right)}${SLOT[t]}<em>${n}</em></button></h4>`;
 // índices, na lista from, dos itens do tipo t (as casas guardam o índice original, que é o que equipar e vender usam)
 const ofType = (from: From, t: ModType) => save[from].flatMap((m, i) => MODS[m].type === t ? [i] : []);
-// um grupo por tipo, com uma casa por slot da nave; os itens equipados ocupam as primeiras
+// Subabas do Equipamento: cada uma mostra os slots de alguns tipos (o inventário, ao lado, mostra tudo)
+type Sub = 'ship' | 'drones' | 'pet';
+const SUBS: Record<Sub, [name: string, types: ModType[]]> = {
+  ship: ['Nave', ['laser', 'shield', 'engine', 'aim', 'missile', 'chip']],
+  drones: ['Drones', ['repair', 'mining']],
+  pet: ['P.E.T.', ['pet']],
+};
+let sub: Sub = 'ship';
+const subOf = (t: ModType) => keys(SUBS).find(s => SUBS[s][1].includes(t)) ?? 'ship';
+// um grupo por tipo da subaba, com uma casa por slot da nave; os itens equipados ocupam as primeiras
 function slotGroups() {
   const st = stats();
-  return keys(SLOT).flatMap(t => {
-    const idx = ofType('mods', t), id = 'mods-' + t;
-    if (!st.slots[t] && !idx.length) return []; // a nave não leva esse tipo
-    return `<section class="t-${t}">${head(id, t, `${idx.length}/${st.slots[t]}`)}${folded.has(id) ? '' :
+  const types = keys(SLOT).filter(t => SUBS[sub][1].includes(t) && (st.slots[t] || ofType('mods', t).length)); // (tipo que a nave não leva fica de fora)
+  const groups = types.map((t, n) => {
+    const idx = ofType('mods', t), id = 'mods-' + t, first = n === 0;
+    return `<section class="t-${t}">${head(id, t, `${idx.length}/${st.slots[t]}`, first)}${shut(id, first) ? '' :
       `<div class="cells">${idx.map(i => cell('mods', i, save.mods[i])).join('')}${empties(st.slots[t] - idx.length)}</div>`}</section>`;
-  }).join('');
+  });
+  const tabs = `<nav class="tabs subs">${keys(SUBS).map(s => `<button data-sub="${s}"${s === sub ? ' class="on"' : ''}>${SUBS[s][0]}</button>`).join('')}</nav>`;
+  return tabs + (groups.join('') || `<p class="none">A ${SHIPS[save.ship].name} não tem slots de ${SUBS[sub][0]}. ${sub === 'pet' ? 'A Corvette leva 1, o Cruiser 2 e o Interceptor 3.' : ''}</p>`);
 }
 // detalhes e ações do item selecionado; a caixa tem altura fixa, com ou sem seleção
 // minério do porão no inventário: empilhado em packs de ORE_STACK, uma casa por pack, com a quantidade no canto
 let oreSel: { ore: OreKey; s: number; n: number } | null = null; // pack selecionado: minério, posição na pilha e quantidade
 const orePic = (k: OreKey) => { const u = iconOf('asteroids/' + ORES[k].model); return u ? `<img src="${u}" alt="">` : svg(I.box); };
-function oreGroup() {
+function oreGroup(first: boolean) {
   const id = 'inv-ore', cells = keys(ORES).flatMap(k => {
     const total = Math.floor(save.cargo[k]);
     return Array.from({length: Math.ceil(total / ORE_STACK)}, (_, s) => { const n = Math.min(ORE_STACK, total - s * ORE_STACK);
       return `<button class="cell ore${oreSel?.ore === k && oreSel.s === s ? ' on' : ''}" data-ore="${k}" data-s="${s}" data-n="${n}" style="--k:${ORES[k].color}" title="${ORES[k].name} · ${n}">${orePic(k)}<em>${n}</em></button>`; });
   });
-  return `<div class="grp t-mining${cells.length ? '' : ' none'}"><h4><button class="fold${folded.has(id) ? ' shut' : ''}" data-fold="${id}" ${cells.length ? '' : 'disabled'}>${svg(I.right)}minérios<em>${Math.floor(cargoUsed())}/${stats().cargo}</em></button></h4>${
-    folded.has(id) || !cells.length ? '' : `<div class="cells g4">${cells.join('')}</div>`}</div>`;
+  return `<div class="grp t-mining${cells.length ? '' : ' none'}"><h4><button class="fold${shut(id, first) ? ' shut' : ''}" data-fold="${id}" ${cells.length ? '' : 'disabled'}>${svg(I.right)}minérios<em>${Math.floor(cargoUsed())}/${stats().cargo}</em></button></h4>${
+    shut(id, first) || !cells.length ? '' : `<div class="cells g4">${cells.join('')}</div>`}</div>`;
 }
 function oreDetail(o: NonNullable<typeof oreSel>) {
   const d = ORES[o.ore], total = Math.floor(save.cargo[o.ore]);
@@ -161,12 +174,14 @@ function detail() {
 // inventário: itens comprados e guardados, separados pelas mesmas categorias da loja. Todas aparecem, na mesma ordem,
 // mesmo vazias (apagadas), para cada tipo ter sempre o seu lugar; a lista rola dentro de uma altura fixa.
 function inventory() {
+  // o primeiro grupo com algo dentro começa aberto (o minério do porão vem antes de tudo)
+  const top = keys(ORES).some(k => save.cargo[k] >= 1) ? 'ore' : keys(SLOT).find(t => ofType('inv', t).length);
   const groups = keys(SLOT).map(t => {
-    const idx = ofType('inv', t), id = 'inv-' + t;
-    return `<div class="grp t-${t}${idx.length ? '' : ' none'}">${head(id, t, idx.length, !idx.length)}${folded.has(id) || !idx.length ? '' :
+    const idx = ofType('inv', t), id = 'inv-' + t, first = t === top;
+    return `<div class="grp t-${t}${idx.length ? '' : ' none'}">${head(id, t, idx.length, first, !idx.length)}${shut(id, first) || !idx.length ? '' :
       `<div class="cells g4">${idx.map(i => cell('inv', i, save.inv[i])).join('')}</div>`}</div>`;
   }).join('');
-  return `<aside><h4>${svg(I.slots)}Inventário<em>${save.inv.length}</em></h4><div class="inv">${oreGroup()}${groups}</div>${detail()}</aside>`;
+  return `<aside><h4>${svg(I.slots)}Inventário<em>${save.inv.length}</em></h4><div class="inv">${oreGroup(top === 'ore')}${groups}</div>${detail()}</aside>`;
 }
 const gearTab = () => `<div class="gear">${shipPane(save.ship)}<div class="mid">${slotGroups()}</div>${inventory()}</div>`;
 
@@ -297,13 +312,15 @@ el.onclick = ev => {
   else if (d.from) { // casa do Equipamento: um clique seleciona; duplo clique equipa ou desequipa
     const from = d.from as From, i = +d.i!;
     sel = {from, i}; oreSel = null; asking = false;
+    if (from === 'inv') sub = subOf(MODS[save.inv[i]].type); // item do inventário: mostra os slots onde ele entra
     if (twice(from + i)) act(from === 'inv' ? 'equip' : 'unequip');
   }
   else if (d.ore) { oreSel = {ore: d.ore as OreKey, s: +d.s!, n: +d.n!}; sel = null; }
   else if (d.do === 'sellpack' || d.do === 'sellores') {
     if (oreSel && (d.do === 'sellpack' ? sellOre(oreSel.ore, oreSel.n) : sellCargo())) { ui('sell'); oreSel = null; }
   }
-  else if (d.fold) { if (!folded.delete(d.fold)) folded.add(d.fold); }
+  else if (d.sub) sub = d.sub as Sub;
+  else if (d.fold) opened.set(d.fold, b.classList.contains('shut')); // estava fechado: abre (e vice-versa)
   else if (d.do) act(d.do);
   else if (d.shipPick) shown = d.shipPick as ShipKey;
   else if (d.ship) { if (buyShip(d.ship as ShipKey)) ui('buy'); }

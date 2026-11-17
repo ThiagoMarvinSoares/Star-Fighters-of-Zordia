@@ -13,6 +13,8 @@ import { playEvents, preloadSounds } from './view/audio.ts';
 import { syncHud } from './ui/hud.ts';
 import { enter } from './ui/account.ts';
 import { syncMissions } from './ui/missions.ts';
+/** tamanho fixo do hangar, em px CSS antes da escala (igual a width e height do #shop em style.css) */
+const SHOP_W = 1200, SHOP_H = 720;
 
 const cv = document.getElementById('c') as HTMLCanvasElement;
 // O canvas tem os pixels reais da tela (até 2x), para as naves saírem nítidas em monitores de alta densidade; o jogo
@@ -27,7 +29,8 @@ const resize = () => {
   ui.scale = Math.min(1.8, Math.max(1, Math.min(view.w / 1280, view.h / 720))) * ui.pref;
   const root = document.documentElement.style;
   root.setProperty('--ui', String(ui.scale));
-  root.setProperty('--ui-shop', String(Math.min(ui.scale, view.w * .98 / Math.min(1000, view.w * .96)))); // o hangar é largo: só até caber
+  // o hangar tem tamanho fixo (SHOP_W x SHOP_H, style.css): amplia com a interface, mas só até caber na tela
+  root.setProperty('--ui-shop', String(Math.min(ui.scale, view.w * .98 / SHOP_W, view.h * .96 / SHOP_H)));
 };
 // preferência de tamanho da interface: teclas + e -, de 80% a 180%, lembrada neste navegador
 const UI_KEY = 'star-fighters-of-zordia:ui';
