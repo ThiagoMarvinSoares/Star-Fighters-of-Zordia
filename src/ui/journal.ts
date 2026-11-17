@@ -1,8 +1,9 @@
 // A lista de missões, a mesma no menu de missões (J) e na aba Missões do hangar: cada sequência liberada, com as
 // missões concluídas e a atual. Na atual, quando dá para pegar ou entregar na base, um botão "Aceitar" ou "Entregar"
-// (só funciona dentro da zona segura). Cada sequência é um <details>: o título abre e fecha a lista (só a primeira começa
-// aberta; o que o jogador abre ou fecha fica em opened, enquanto a página estiver aberta), e um botão no título passa a
-// acompanhá-la (o objetivo dela tem a vez no painel e no marcador do mapa).
+// (só funciona dentro da zona segura). Cada sequência é um <details>: o título abre e fecha a lista, uma aberta por vez
+// (o name em comum faz o navegador fechar a outra; só a primeira começa aberta, e o que o jogador abre ou fecha fica em
+// opened, enquanto a página estiver aberta), e um botão no título passa a acompanhá-la (o objetivo dela tem a vez no
+// painel e no marcador do mapa).
 import { journal, pin, board, replay } from '../game/missions.ts';
 import type { Track } from '../game/missions.ts';
 import { atBase, persist } from '../game/state.ts';
@@ -16,7 +17,9 @@ const opened = new Map<Track, boolean>();
 // administrador, direto na conta (tools/missoes-piloto.ts).
 const DEV = location.hostname === 'localhost';
 
-export function journalHtml() {
+/** group: o name dos <details> desta lista (um por lugar onde ela aparece: o menu J continua na página depois de fechado,
+ *  e o name agrupa o documento inteiro; com o mesmo, abrir uma no hangar fecharia a do menu) */
+export function journalHtml(group: string) {
   const chains = journal(), takes = new Map(board().map(b => [b.track, b.kind]));
   const live = chains.filter(c => c.items.some(i => i.status !== 'done')), shown = pin.track ?? live[0]?.track;
   if (!chains.length) return '<div class="jr"><p>Nenhuma missão ainda. As disponíveis aparecem aqui e no hangar, na aba Missões.</p></div>';
@@ -24,7 +27,7 @@ export function journalHtml() {
   return `<div class="jr">${chains.map((c, n) => {
     const on = c.items.some(i => i.status !== 'done'), take = takes.get(c.track);
     const again = !DEV ? '' : `<button class="play" data-play="${c.track}" data-id="${c.items[0].id}" title="${on ? 'Recomeçar a sequência desde a primeira missão' : 'Jogar a sequência de novo'} (a recompensa só é paga uma vez)">${on ? 'Recomeçar' : 'Refazer'}</button>`;
-    return `<details class="${c.track === shown && on ? 'on' : ''}" data-track="${c.track}" ${opened.get(c.track) ?? n === 0 ? 'open' : ''}>
+    return `<details name="${group}" class="${c.track === shown && on ? 'on' : ''}" data-track="${c.track}" ${opened.get(c.track) ?? n === 0 ? 'open' : ''}>
       <summary><h3>${c.chain}${on ? `<button data-pin="${c.track}" ${c.track === shown ? 'disabled' : ''}>${c.track === shown ? 'Acompanhando' : 'Acompanhar'}</button>` : '<em>Concluída</em>'}${again}</h3></summary>
       <ol>${c.items.map(i => `<li class="${STATUS[i.status][1]}"><b>${i.title}</b><small>${i.giver} · ${STATUS[i.status][0]}</small>${i.goal ? `<span>${i.goal}</span>` : ''}
         ${i.status !== 'done' && take ? `<button class="take" data-take="${c.track}" ${away}>${take === 'offer' ? 'Aceitar' : 'Entregar'}</button>` : ''}</li>`).join('')}</ol>

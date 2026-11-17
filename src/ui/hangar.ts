@@ -104,11 +104,13 @@ const cell = (from: From, i: number, k: ModKey) => { const m = MODS[k], pet = pe
   return `<button class="cell t-${m.type}${sel?.from === from && sel.i === i ? ' on' : ''}"
   data-from="${from}" data-i="${i}" title="${pet ? esc(petLabel(pet)) : m.name} · ${effect(m, xp)}">${pic(k, xp)}</button>`; };
 const empties = (n: number) => '<span class="cell empty"></span>'.repeat(Math.max(0, n));
-// Grupos recolhíveis (nave e inventário): clicar no título esconde ou mostra as casas. Cada lista começa com o primeiro
-// grupo aberto e os outros fechados; opened guarda o que o jogador abriu ou fechou (não é salvo: ao recarregar a
-// página, volta ao começo). id = 'mods-<tipo>', 'inv-<tipo>' ou 'inv-ore'; lock = título sem o que recolher (grupo vazio).
-const opened = new Map<string, boolean>();
-const shut = (id: string, first: boolean) => !(opened.get(id) ?? first);
+// Grupos recolhíveis (nave e inventário): clicar no título esconde ou mostra as casas. Em cada lista (a coluna dos slots
+// e o inventário, de cada subaba) só um grupo fica aberto por vez: abrir um fecha o outro. Cada lista começa com o
+// primeiro aberto; openIn guarda o que o jogador escolheu ('' = todos fechados; não é salvo: ao recarregar a página,
+// volta ao começo). id = 'mods-<tipo>', 'inv-<tipo>' ou 'inv-ore'; lock = título sem o que recolher (grupo vazio).
+const openIn = new Map<string, string>();
+const listOf = (id: string) => id.split('-')[0] + '-' + sub;
+const shut = (id: string, first: boolean) => { const o = openIn.get(listOf(id)); return o === undefined ? !first : o !== id; };
 const head = (id: string, t: ModType, n: string | number, first: boolean, lock = false) =>
   `<h4><button class="fold${shut(id, first) ? ' shut' : ''}" data-fold="${id}" ${lock ? 'disabled' : `title="${shut(id, first) ? 'Mostrar' : 'Recolher'}"`}>${svg(I.right)}${SLOT[t]}<em>${n}</em></button></h4>`;
 // índices, na lista from, dos itens do tipo t (as casas guardam o índice original, que é o que equipar e vender usam)
@@ -174,14 +176,17 @@ function detail() {
 // inventário: itens comprados e guardados, separados pelas mesmas categorias da loja. Todas aparecem, na mesma ordem,
 // mesmo vazias (apagadas), para cada tipo ter sempre o seu lugar; a lista rola dentro de uma altura fixa.
 function inventory() {
+  // só o que dá para equipar na subaba aberta; o minério do porão (que não se equipa) fica em Drones, com a mineração
+  const types = keys(SLOT).filter(t => SUBS[sub][1].includes(t)), ores = sub === 'drones';
   // o primeiro grupo com algo dentro começa aberto (o minério do porão vem antes de tudo)
-  const top = keys(ORES).some(k => save.cargo[k] >= 1) ? 'ore' : keys(SLOT).find(t => ofType('inv', t).length);
-  const groups = keys(SLOT).map(t => {
+  const top = ores && keys(ORES).some(k => save.cargo[k] >= 1) ? 'ore' : types.find(t => ofType('inv', t).length);
+  const groups = types.map(t => {
     const idx = ofType('inv', t), id = 'inv-' + t, first = t === top;
     return `<div class="grp t-${t}${idx.length ? '' : ' none'}">${head(id, t, idx.length, first, !idx.length)}${shut(id, first) || !idx.length ? '' :
       `<div class="cells g4">${idx.map(i => cell('inv', i, save.inv[i])).join('')}</div>`}</div>`;
   }).join('');
-  return `<aside><h4>${svg(I.slots)}Inventário<em>${save.inv.length}</em></h4><div class="inv">${oreGroup(top === 'ore')}${groups}</div>${detail()}</aside>`;
+  const n = save.inv.filter(k => types.includes(MODS[k].type)).length;
+  return `<aside><h4>${svg(I.slots)}Inventário<em>${n}</em></h4><div class="inv">${ores ? oreGroup(top === 'ore') : ''}${groups}</div>${detail()}</aside>`;
 }
 const gearTab = () => `<div class="gear">${shipPane(save.ship)}<div class="mid">${slotGroups()}</div>${inventory()}</div>`;
 
@@ -221,7 +226,7 @@ function storeTab() {
       <small class="note">${freeSlot(m.type) ? 'Há slot livre: vai direto para a nave.' : 'Slots deste tipo cheios: vai para o inventário.'}</small></div></div>`;
 }
 // Aba Missões: a mesma lista do menu de missões (J), com Aceitar/Entregar nas que dá para pegar ou entregar aqui.
-const missionsTab = journalHtml;
+const missionsTab = () => journalHtml('jr-shop');
 const TABS: Record<Tab, [name: string, body: () => string]> = {gear: ['Equipamento', gearTab], ships: ['Naves', shipsTab], store: ['Loja', storeTab], missions: ['Missões', missionsTab]};
 
 // prévia 3D girando sobre um anel brilhante: a nave em uso ou, na aba Naves, a nave escolhida
@@ -319,8 +324,8 @@ el.onclick = ev => {
   else if (d.do === 'sellpack' || d.do === 'sellores') {
     if (oreSel && (d.do === 'sellpack' ? sellOre(oreSel.ore, oreSel.n) : sellCargo())) { ui('sell'); oreSel = null; }
   }
-  else if (d.sub) sub = d.sub as Sub;
-  else if (d.fold) opened.set(d.fold, b.classList.contains('shut')); // estava fechado: abre (e vice-versa)
+  else if (d.sub) { sub = d.sub as Sub; sel = null; oreSel = null; asking = false; } // o item selecionado pode não estar na lista nova
+  else if (d.fold) openIn.set(listOf(d.fold), b.classList.contains('shut') ? d.fold : ''); // estava fechado: abre (e fecha o outro aberto)
   else if (d.do) act(d.do);
   else if (d.shipPick) shown = d.shipPick as ShipKey;
   else if (d.ship) { if (buyShip(d.ship as ShipKey)) ui('buy'); }

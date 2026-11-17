@@ -89,7 +89,7 @@ const book = document.createElement('div');
 book.id = 'quests'; book.hidden = true;
 document.body.append(book);
 function renderBook() {
-  book.innerHTML = `<div class="frame"><header><h2>Missões</h2><button class="x" data-close title="Fechar (J ou Esc)">×</button></header>${journalHtml()}</div>`;
+  book.innerHTML = `<div class="frame"><header><h2>Missões</h2><button class="x" data-close title="Fechar (J ou Esc)">×</button></header>${journalHtml('jr-book')}</div>`;
 }
 let bookKey = '';
 const toggleBook = (on = book.hidden) => { if (on && book.hidden) dispatchEvent(new CustomEvent('menu', {detail: 'quests'})); book.hidden = !on; if (on) { bookKey = ''; renderBook(); } };
