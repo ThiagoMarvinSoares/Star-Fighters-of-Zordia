@@ -208,6 +208,12 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   const hull = (stats().r + PET.r) * SCALE, [tail, l, r] = rel();
   assert(Math.abs(tail.side) < 1e-6 && tail.back > hull && Math.abs(l.back - r.back) < 1e-6 && l.back < tail.back - hull
          && Math.abs(l.side + r.side) < 1e-6 && r.side > hull, `triângulo: ${JSON.stringify(rel())}`);
+  // quatro: em arco em volta da traseira, simétrico: dois dos lados e dois atrás, lado a lado, e ninguém em fila
+  save.mods.push('P1'); frames(1);
+  const four = rel().map(o => [+o.back.toFixed(3), +o.side.toFixed(3)]).sort((a, b) => a[1] - b[1]);
+  assert(four.length === 4 && four.every((o, i) => Math.abs(o[0] - four[3 - i][0]) < 1e-6 && Math.abs(o[1] + four[3 - i][1]) < 1e-6)
+         && four[1][0] > four[0][0] && Math.abs(four[1][1]) > 1, `quatro em arco: ${JSON.stringify(four)}`);
+  save.mods.pop(); frames(1);
   save.mods.splice(save.mods.length - 2, 2); frames(1);
   const [one] = rel(); assert(Math.abs(one.side) < 1e-6 && one.back > hull, `um, logo atrás: ${JSON.stringify(one)}`);
   save.mods.push('P1', 'P1'); frames(1);

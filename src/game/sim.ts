@@ -272,7 +272,7 @@ export function update(dt: number) {
   const spots = PET.formation[Math.min(pks.length, PET.formation.length) - 1];
   pks.forEach((mod, i) => {
     const lv = PET_LEVELS[levelOf(flying(i).xp)]; // cada P.E.T. no nível dele
-    const [b, r] = spots?.[i] ?? [2.2, 0], d = b * unit, side = r * unit; // (mais de 3: em fila atrás)
+    const [b, r] = spots?.[i] ?? [2.2, 0], d = b * unit, side = r * unit; // (além dos lugares da formação: em fila atrás)
     const q = pets[i] ??= {x: 0, y: 0, a: p.a, h: PET.h, hp: 1, mod};
     Object.assign(q, {x: p.x - c * d - s * side, y: p.y - s * d + c * side, hp: 1, mod});
     q.a = aim && p.target ? Math.atan2(p.target.y - q.y, p.target.x - q.x) : p.a;

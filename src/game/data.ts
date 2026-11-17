@@ -190,9 +190,9 @@ export const MODS: Record<ModKey, ModDef> = {
  *  formation: o lugar de cada um, conforme quantos estão equipados, em [para trás, para a direita], medido em "folgas":
  *  uma folga é o raio da nave mais o do P.E.T., mais gap (1 para trás = logo atrás da popa; 1 para o lado = ao lado do
  *  casco, sem encostar). Um: atrás. Dois: um de cada lado, quase na altura da nave. Três: em triângulo, um atrás e dois
- *  dos lados. */
+ *  dos lados. Quatro: em arco em volta da traseira, dois dos lados e dois atrás, lado a lado. */
 export const PET = {r: 10, gap: 40, h: 40, turn: 8,
-                    formation: [[[1.35, 0]], [[.45, -1], [.45, 1]], [[1.35, 0], [.45, -1], [.45, 1]]] as [number, number][][]};
+                    formation: [[[1.35, 0]], [[.45, -1], [.45, 1]], [[1.35, 0], [.45, -1], [.45, 1]], [[1.3, -.45], [1.3, .45], [.45, -1], [.45, 1]]] as [number, number][][]};
 /** Níveis do P.E.T. O jogador ganha experiência de P.E.T. enquanto tem um equipado: cada inimigo destruído vale a
  *  recompensa dele, e cada missão entregue, o pagamento dela. O nível vale para todos os P.E.T.s do jogador.
  *  xp = experiência total para chegar ao nível; dmg = % do dano da nave (a soma dos lasers, já com o chip de dano) em
