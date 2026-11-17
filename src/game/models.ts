@@ -25,7 +25,7 @@ export const ENGINES: Record<ModelKey, Vec3[]> = {
   dreadnought: [[-.63, .09, .65], [-.63, .09, -.65], [-.57, -.05, .19], [-.57, -.05, -.19]], // os quatro motores
   ferrao: [[-.97, 0, 0]], // bocal na ponta da cauda fina
   northstar: [[-.97, 0, 0]], // o anel do motor, no centro da traseira
-  astraeus: [[-.88, -.1, .15], [-.88, -.1, -.15]], // os dois motores cilíndricos, por baixo da traseira
+  astraeus: [[-.9, -.02, .16], [-.9, -.02, -.16]], // os dois motores da traseira
   furia: [[-.46, .03, 0]], // os motores na traseira do casco (as asas soltas vão além dele)
   unsa: [],
   drone: [], boss: [], station: [],
@@ -46,7 +46,7 @@ export const HARD: Record<ModelKey, Vec3[]> = {
   ferrao: pairs([[.45, .12]]), // nas laterais da frente (posições para o ferrao.glb)
   furia: pairs([[.6, .06], [.3, .14]]), // a fileira de canhões ao longo da frente do casco (posições para o furia.glb)
   northstar: pairs([[.1, .6], [.72, .13], [.5, .1], [-.2, .55], [-.55, .55], [.2, .25]]), // canhões das asas e ao longo do casco (posições para o northstar.glb)
-  astraeus: pairs([[-.4, .55, -.05], [-.2, .7, -.08], [0, .8, -.06], [.2, .84, -.06], [.4, .78, -.06], [.55, .06, -.05], [0, .15, -.08]]), // ao longo da asa em meia-lua e do casco central (posições para o astraeus.glb)
+  astraeus: pairs([[-.3, .53, -.17], [-.1, .69, -.19], [.1, .7, -.2], [.3, .67, -.19], [.5, .6, -.18], [.45, .07, 0], [-.15, .13, 0]]), // ao longo da asa em meia-lua e do casco central (posições para o astraeus.glb)
   unsa: [],
   station: [],
 };
