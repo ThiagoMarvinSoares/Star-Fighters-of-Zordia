@@ -116,6 +116,7 @@ const CELLS: Cell[] = [];
   }
 }
 const RIPPLE = .7; // segundos que a onda de um impacto leva para atravessar a bolha e sumir
+const SHIELD_ALPHA = .4; // opacidade do escudo inteiro (corpo, borda, colmeia e impactos): menor = mais transparente
 const ripples: { ang: number; t: number }[] = []; // impactos recentes no escudo do jogador
 
 function shield(st: Stats, t: number) {
@@ -123,7 +124,7 @@ function shield(st: Stats, t: number) {
   while (ripples.length && t - ripples[0].t > RIPPLE) ripples.shift();
   if (p.sh <= 0) return;
   const R = st.r * SCALE * 1.2 * (1 + .012 * Math.sin(t * 2.3)), cy = p.y * TILT - st.r * .2, k = p.sh / st.maxSh; // R "respira"
-  const a = (v: number) => st.aura + Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0'); // '#rrggbb' + transparência
+  const a = (v: number) => st.aura + Math.round(clamp(v * SHIELD_ALPHA, 0, 1) * 255).toString(16).padStart(2, '0'); // '#rrggbb' + transparência
   // corpo da bolha, quase transparente, e a borda; os dois enfraquecem conforme o escudo cai
   const g = ctx.createRadialGradient(p.x, cy - R * .25, R * .2, p.x, cy, R);
   g.addColorStop(0, a(0)); g.addColorStop(.7, a(.04 + .06 * k)); g.addColorStop(1, a(.14 + .18 * k));
@@ -142,8 +143,8 @@ function shield(st: Stats, t: number) {
       hit = Math.max(hit, Math.exp(-(((far - age * 2.4) / .22) ** 2)) * (1 - age / RIPPLE));
     }
     ctx.beginPath(); for (const [px, py] of q.pts) ctx.lineTo(px, py); ctx.closePath();
-    if (hit > .05) { ctx.globalAlpha = Math.min(1, hit * .35); ctx.fill(); }
-    ctx.globalAlpha = Math.min(1, (.03 + .1 * q.d * q.d + .22 * band) * (.4 + .6 * k) + hit); // parada: quase invisível no centro
+    if (hit > .05) { ctx.globalAlpha = Math.min(1, hit * .35) * SHIELD_ALPHA; ctx.fill(); }
+    ctx.globalAlpha = Math.min(1, (.03 + .1 * q.d * q.d + .22 * band) * (.4 + .6 * k) + hit) * SHIELD_ALPHA; // parada: quase invisível no centro
     ctx.stroke();
   }
   ctx.restore(); ctx.lineWidth = 2;
