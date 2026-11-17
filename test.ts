@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME, DRONE_ELITE, FERRAO, FURIA, FLEET, NPCS, FURIA_PATROL, PET, PET_LEVELS } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
 import { npcs, parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip, texts, pets, levelOf, petAt, petXp, renamePet, petLabel, PET_NAME } from './src/game/state.ts';
-import type { Enemy } from './src/game/state.ts';
+import type { Enemy, Strike } from './src/game/state.ts';
 import { HARD, ENGINES, SCALE, PET_GUNS, mount } from './src/game/models.ts';
 import { update, hit, explode, keepOut, travel, resume, guards, solid } from './src/game/sim.ts';
 import { journal, pin, MISSIONS, PLACES, mission, needsTalk, questNow, questGoal, questTarget, questRadio, progress, talkNow, talkDone, arrive, fieldTalk, fieldTalkNow, scenery, cue, replay, talkFor, questPlace, board } from './src/game/missions.ts';
@@ -466,8 +466,9 @@ assert.deepEqual(keys(MODS).filter(k => MODS[k].type === 'pet'), ['P1'], 'só se
   void all; void home; strikes.length = 0; toHome();
 }
 
-// Leviatã: três ataques de míssil em rodízio. Reto; leque de três (o do meio no jogador); e um teleguiado de curva aberta,
-// que acerta quem fica parado mas não vira mais que a curva máxima e se apaga depois de voar o alcance dele
+// Leviatã: quatro ataques de míssil, sorteados sem repetir o anterior. Reto; leque de três (o do meio no jogador); um teleguiado de curva aberta,
+// que acerta quem fica parado mas não vira mais que a curva máxima e se apaga depois de voar o alcance dele; e um de
+// fragmentação, mirado à frente de quem anda, que explode em círculo no fim do voo
 {
   reset(); toSilent();
   const b = enemies.find(o => o.t === BOSS)!, H = ENEMY_MISSILE.homing;
@@ -479,8 +480,8 @@ assert.deepEqual(keys(MODS).filter(k => MODS[k].type === 'pet'), ['P1'], 'só se
   p.x = p.tx = 3500; p.y = p.ty = 2000; p.hp = 1e6; p.sh = 0; b.atk = 0;
   const a0 = 0; // jogador bem à direita do chefe
   assert.deepEqual(launch().map(s => [s.homing ?? false, +s.a.toFixed(3)]), [[false, a0]], '1: um reto');
-  assert.deepEqual(launch().map(s => +s.a.toFixed(3)), [-ENEMY_MISSILE.cone, a0, ENEMY_MISSILE.cone].map(v => +v.toFixed(3)), '2: leque de três, o do meio no jogador');
-  const [h] = launch();
+  b.atk = 1; assert.deepEqual(launch().map(s => +s.a.toFixed(3)), [-ENEMY_MISSILE.cone, a0, ENEMY_MISSILE.cone].map(v => +v.toFixed(3)), '2: leque de três, o do meio no jogador');
+  b.atk = 2; const [h] = launch();
   assert(h.homing && h.speed < ENEMY_MISSILE.speed && strikes.length === 1, '3: um teleguiado, mais lento');
   // parado: o teleguiado acerta
   let hp0 = p.hp;
@@ -494,11 +495,45 @@ assert.deepEqual(keys(MODS).filter(k => MODS[k].type === 'pet'), ['P1'], 'só se
   hp0 = p.hp; p.x = p.tx = 8500; p.y = p.ty = 5500;
   for (let i = 0; i < 800 && strikes.length; i++) { hold(); update(.05); }
   assert(!strikes.length && p.hp === hp0, 'se apagou sem alcançar o jogador');
+  // sorteio: em 200 ataques saem os quatro, e nunca o mesmo duas vezes seguidas
+  { const kind = (l: Strike[]) => l.length === 3 ? 'cone' : l[0].homing ? 'homing' : l[0].burst ? 'burst' : 'line', seen: string[] = [];
+    p.x = p.tx = 3500; p.y = p.ty = 2000; b.atk = 0; for (let i = 0; i < 200; i++) seen.push(kind(launch()));
+    assert.deepEqual(new Set(seen), new Set(BOSS.attacks), 'saem todos');
+    assert(seen.every((k, i) => i === 0 || k !== seen[i - 1]), 'nunca o mesmo duas vezes seguidas'); }
+  // 4: fragmentação. Com a nave andando, mira à frente dela, e explode meio alcance de fragmento antes do ponto previsto
+  const B = ENEMY_MISSILE.burst;
+  p.x = 3500; p.y = 2000; p.tx = 3500; p.ty = 9000; // descendo pelo mapa (y crescente), de lado para o chefe
+  b.atk = 3; const [f] = launch();
+  const fx = f.x + Math.cos(f.a) * f.len, fy = f.y + Math.sin(f.a) * f.len;
+  assert(f.burst && fy > p.y + 100 && f.len <= BOSS.range! + 1e-6, `explode à frente de quem anda: ${fx.toFixed(0)}, ${fy.toFixed(0)} (nave em ${p.x}, ${p.y.toFixed(0)})`);
+  // quem segue reto entra nos fragmentos
+  hp0 = p.hp;
+  for (let i = 0; i < 400 && strikes.length; i++) { hold(); frames(1); }
+  assert.equal(hp0 - p.hp, Math.round(BOSS.dmg * ENEMY_MISSILE.mult), 'seguiu reto: levou os fragmentos');
+  // destino curto: a previsão para onde a nave para, e ela leva os fragmentos lá
+  p.x = 3500; p.y = 2000; p.tx = 3500; p.ty = 2120;
+  b.atk = 3; launch(); hp0 = p.hp;
+  for (let i = 0; i < 400 && strikes.length; i++) { hold(); frames(1); }
+  assert(Math.abs(p.y - 2120) < 5 && hp0 - p.hp === Math.round(BOSS.dmg * ENEMY_MISSILE.mult), `parou no destino: levou os fragmentos (${hp0 - p.hp})`);
+  // parado: explode meio alcance de fragmento antes dele; o míssil não bate, se parte em todos os fragmentos e só um acerta
+  p.x = p.tx = 3500; p.y = p.ty = 2000;
+  b.atk = 3; const [g] = launch();
+  assert(g.burst && Math.abs(g.len - (500 - B.reach / 2)) < 1, `parado: explode antes dele (${g.len.toFixed(0)})`);
+  hp0 = p.hp; let most = 0;
+  for (let i = 0; i < 400 && strikes.length; i++) { hold(); frames(1); most = Math.max(most, strikes.filter(s => s.frag).length); }
+  assert.equal(most, B.frags, 'se parte em todos os fragmentos');
+  assert.equal(hp0 - p.hp, Math.round(BOSS.dmg * ENEMY_MISSILE.mult), 'uma explosão acerta uma vez só');
+  // quem estava andando e muda de direção quando vê o aviso escapa (o ataque é para isso)
+  p.x = 3500; p.y = 2000; p.tx = 3500; p.ty = 9000;
+  b.atk = 3; launch(); p.ty = -9000; // vira para o outro lado
+  hp0 = p.hp;
+  for (let i = 0; i < 400 && strikes.length; i++) { hold(); frames(1); }
+  assert.equal(p.hp, hp0, 'mudou de direção: escapou dos fragmentos');
   // sem escudo, fica furioso: aviso pela metade e o próximo ataque mais cedo; com escudo, volta ao normal
   p.x = p.tx = 3500; p.y = p.ty = 2000; // de volta ao alcance do chefe
   b.atk = 0; b.sh = 0; b.lastHit = Infinity; const [r] = launch(); // lastHit: o escudo não começa a voltar no meio da conta
   assert(Math.abs(r.warn0 - ENEMY_MISSILE.warn * ENEMY_MISSILE.rage.warn) < 1e-9 && b.mcd === ENEMY_MISSILE.rage.cd, 'furioso: aviso curto e rodízio rápido');
-  b.sh = BOSS.sh; b.lastHit = -99; const [n] = launch();
+  b.sh = BOSS.sh; b.lastHit = -99; b.atk = 0; const [n] = launch(); // (o ataque é sorteado: fixa o reto, de aviso normal)
   assert(n.warn0 === ENEMY_MISSILE.warn && b.mcd === ENEMY_MISSILE.cd, 'com escudo: normal');
   save.mods.splice(0, save.mods.length, ...mods0);
   strikes.length = 0; toHome();

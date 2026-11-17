@@ -230,6 +230,11 @@ export function draw() {
     ctx.lineCap = 'round'; ctx.strokeStyle = '#ff3030';
     ctx.globalAlpha = (.1 + .2 * k) * pulse; ctx.lineWidth = 36; ctx.beginPath(); ctx.moveTo(s.x, s.y * TILT); ctx.lineTo(ex, ey); ctx.stroke();
     ctx.globalAlpha = (.45 + .55 * k) * pulse; ctx.lineWidth = 2 + 2 * k; ctx.beginPath(); ctx.moveTo(s.x, s.y * TILT); ctx.lineTo(ex, ey); ctx.stroke();
+    if (s.burst) { // fragmentação: no fim da linha, o círculo até onde os fragmentos vão, tracejado e se fechando até a hora
+      const end = {x: ex, y: ey / TILT};
+      ctx.setLineDash([10, 8]); ctx.lineWidth = 2; ring(end, ENEMY_MISSILE.burst.reach * (1.3 - .3 * k)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.globalAlpha = (.08 + .12 * k) * pulse; ctx.fillStyle = '#ff3030'; ring(end, ENEMY_MISSILE.burst.reach); ctx.fill();
+    }
     ctx.globalAlpha = 1; ctx.lineWidth = 2;
   }
   drawParts(true); // chamas de quem voa em direção à câmera: atrás do casco
@@ -263,7 +268,7 @@ export function draw() {
                 ...out.map(o => ({id: o, o, r: BOT.r * (.3 + .7 * bot.on), model: BOT_MODEL, h: BOT.h * bot.on})),
                 ...props.map(pr => ({id: propId(pr), o: {x: pr.x, y: pr.y, a: pr.a + tnow * pr.spin * 6.2832}, r: pr.r, model: pr.model})),
                 ...ships.map(n => ({id: n, o: n, r: NPCS[n.id].r, model: NPCS[n.id].model, h: NPCS[n.id].h})),
-                ...strikes.filter(s => s.live && onScreen(s)).map(s => ({id: s, o: {x: s.x, y: s.y, a: s.a}, r: MISSILE_R, model: ENEMY_MISSILE_MODEL, h: 10})),
+                ...strikes.filter(s => s.live && onScreen(s)).map(s => ({id: s, o: {x: s.x, y: s.y, a: s.a}, r: MISSILE_R * (s.frag ? .5 : 1), model: ENEMY_MISSILE_MODEL, h: 10})), // fragmento: metade do tamanho
                 ...shots.flatMap(q => { const model = q.live && onScreen(q) && missileModel(q); return model ? [{id: q, o: q, r: MISSILE_R, model, h: q.h}] : []; })],
                p, cw / z, ch / z, cv3w(), cv3h());
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(stage.canvas, 0, 0); ctx.restore(); // pixel a pixel, sem escala

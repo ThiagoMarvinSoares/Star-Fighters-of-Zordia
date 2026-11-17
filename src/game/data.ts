@@ -29,6 +29,13 @@ export const REPAIR_DELAY = 4;
 // faz passar direto, e quem foge em linha reta por 5 s o vê se apagar.
 export const ENEMY_MISSILE = {cd: 4, warn: 1, speed: 1500, mult: 2.5, reach: 0, followWarn: .7, cone: .35,
                               homing: {speed: 380, turn: 1.6, reach: 2000, warn: .6},
+                              // fragmentação ('burst'): mira à frente da nave, onde ela estará ao fim do aviso e do voo se
+                              // seguir na mesma direção, e explode meio reach antes desse ponto (vindo do chefe): o lugar
+                              // previsto fica dentro do anel, ainda fechado. Voa reto sem bater em ninguém e se parte em
+                              // frags fragmentos, que saem em círculo a fragSpeed e voam reach. Quem segue reto entra
+                              // neles; quem muda de direção escapa. Cada explosão acerta no máximo uma vez, com o dano de
+                              // um míssil.
+                              burst: {frags: 16, fragSpeed: 900, reach: 480},
                               // fúria (EnemyDef.enrage, com o escudo zerado): os avisos duram warn vezes o normal e o rodízio anda a cada cd s
                               rage: {warn: .5, cd: 2.5},
                               /** o risco pulsa uma vez a cada pulse segundos: num aviso de 1 s, duas vezes; furioso, uma */
@@ -94,9 +101,11 @@ export interface EnemyDef {
   missile?: boolean;
   /** ao lançar um míssil, já mira um segundo para onde o jogador foi (quem desviou do primeiro), com aviso mais curto */
   followUp?: boolean;
-  /** ataques de míssil em rodízio, um a cada ENEMY_MISSILE.cd (sem isto, sempre 'line'): 'line' = um reto; 'cone' = três
-   *  retos em leque, o do meio no jogador; 'homing' = um teleguiado, lento e de curva aberta, que dá para despistar */
-  attacks?: ('line' | 'cone' | 'homing')[];
+  /** ataques de míssil, um a cada ENEMY_MISSILE.cd, sorteados entre estes sem repetir o anterior (sem isto, sempre 'line'). O
+   *  primeiro é o da lista. 'line' = um reto; 'cone' = três
+   *  retos em leque, o do meio no jogador; 'homing' = um teleguiado, lento e de curva aberta, que dá para despistar;
+   *  'burst' = um de fragmentação, mirado à frente do jogador, que explode em círculo no fim (ENEMY_MISSILE.burst) */
+  attacks?: ('line' | 'cone' | 'homing' | 'burst')[];
   /** sem escudo, fica furioso: avisos pela metade (o risco pulsa uma vez em vez de duas) e ataques mais seguidos (ENEMY_MISSILE.rage) */
   enrage?: boolean;
 }
@@ -234,7 +243,7 @@ export const FERRAO: EnemyDef = {key: 'ferrao', name: 'Ferrão', hp: 900, sh: 50
 // Fúria: a nave da Poliveira. Casco em losango com asas soltas, flutuando em volta. Também ainda NÃO está no jogo;
 // números provisórios, de chefe (acima do Leviatã), para quando ela entrar.
 export const FURIA: EnemyDef = {key: 'furia', name: 'Fúria', hp: 120000, sh: 40000, dmg: 500, speed: 60, reward: 60000, r: 140, color: '#ff4d6d', aggro: true, range: 750, missile: true, attacks: ['line', 'cone', 'homing'], enrage: true};
-export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700, missile: true, attacks: ['line', 'cone', 'homing'], enrage: true};
+export const BOSS: EnemyDef = {key: 'boss', name: 'Leviatã', hp: 89000, sh: 20000, dmg: 400, speed: 45, reward: 40000, r: 120, color: '#7dff6a', aggro: true, organic: true, range: 700, missile: true, attacks: ['line', 'cone', 'homing', 'burst'], enrage: true};
 
 // ---------- mineração ----------
 // Asteroides espalhados pelo mapa guardam minério. Clicar num deles, com um minerador equipado e a nave a até

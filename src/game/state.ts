@@ -110,7 +110,11 @@ export interface Strike { src: Enemy; a: number; len: number; warn: number; /** 
   /** velocidade de voo; homing = teleguiado (vira para o jogador, até a curva máxima) */
   speed: number; homing?: boolean;
   /** é o segundo míssil de quem tem EnemyDef.followUp (não puxa um terceiro) */
-  second?: boolean }
+  second?: boolean;
+  /** míssil de fragmentação: não bate em ninguém no caminho; ao fim do voo, se parte em fragmentos (ENEMY_MISSILE.burst) */
+  burst?: boolean;
+  /** fragmento: os de uma mesma explosão dividem este objeto, e só o primeiro que acertar causa dano */
+  frag?: { hit: boolean } }
 /** espólio no mapa (cubo): passar por cima recolhe o item para o inventário */
 export interface Drop { x: number; y: number; item: ModKey }
 /** asteroide: parado no mapa, some quando o minério (left) acaba */

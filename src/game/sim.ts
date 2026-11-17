@@ -361,11 +361,29 @@ export function update(dt: number) {
       if (e.t.missile && e.mcd <= 0 && ed < (e.t.range ?? 500)) {
         const rage = e.t.enrage && e.sh <= 0, R = ENEMY_MISSILE.rage, wk = rage ? R.warn : 1; // furioso: avisos curtos, rodízio rápido
         e.mcd = rage ? R.cd : ENEMY_MISSILE.cd;
-        const kind = e.t.attacks?.[e.atk++ % e.t.attacks.length] ?? 'line', a0 = Math.atan2(p.y - e.y, p.x - e.x), H = ENEMY_MISSILE.homing;
+        const list = e.t.attacks ?? ['line'], kind = list[e.atk % list.length], a0 = Math.atan2(p.y - e.y, p.x - e.x), H = ENEMY_MISSILE.homing;
+        // o próximo ataque é sorteado entre os outros: imprevisível, mas nunca o mesmo duas vezes seguidas
+        if (list.length > 1) e.atk = (e.atk % list.length + 1 + Math.floor(rand() * (list.length - 1))) % list.length;
         const warn = ENEMY_MISSILE.warn * wk, m = {src: e, a: a0, len: (e.t.range ?? 500) + ENEMY_MISSILE.reach, warn, warn0: warn, speed: ENEMY_MISSILE.speed,
                    dmg: Math.round(e.t.dmg * ENEMY_MISSILE.mult), x: e.x, y: e.y, flown: 0, live: false};
         if (kind === 'cone') for (const d of [-ENEMY_MISSILE.cone, 0, ENEMY_MISSILE.cone]) strikes.push({...m, a: a0 + d});
         else if (kind === 'homing') strikes.push({...m, homing: true, speed: H.speed, len: H.reach, warn: H.warn * wk, warn0: H.warn * wk});
+        else if (kind === 'burst') { // fragmentação: mira onde a nave estará, se seguir para onde está indo, quando ele explodir
+          // a nave para no destino: a previsão não passa dele
+          const v = moved ? st.speed : 0, go = Math.atan2(p.ty - p.y, p.tx - p.x), left = Math.hypot(p.tx - p.x, p.ty - p.y);
+          let tx = p.x, ty = p.y;
+          // quando o fragmento que sai na direção do míssil chega ao ponto: aviso + voo até a explosão (meio alcance de
+          // fragmento antes do ponto) + o resto, no fragmento. O tempo depende do ponto e vice-versa: três passos bastam
+          const R = ENEMY_MISSILE.burst.reach / 2;
+          for (let k = 0; k < 3; k++) {
+            const d = Math.hypot(tx - e.x, ty - e.y), t = warn + Math.max(0, d - R) / m.speed + Math.min(d, R) / ENEMY_MISSILE.burst.fragSpeed;
+            const ahead = Math.min(v * t, left);
+            tx = p.x + Math.cos(go) * ahead; ty = p.y + Math.sin(go) * ahead;
+          }
+          // explode meio alcance de fragmento antes do ponto previsto: ele fica dentro do anel, que ainda está fechado; e o
+          // voo não passa do alcance do chefe (com os fragmentos, o ataque vai até m.len + reach)
+          strikes.push({...m, burst: true, a: Math.atan2(ty - e.y, tx - e.x), len: clamp(Math.hypot(tx - e.x, ty - e.y) - ENEMY_MISSILE.burst.reach / 2, 0, m.len)});
+        }
         else strikes.push(m);
       }
     } else {
@@ -446,15 +464,25 @@ export function update(dt: number) {
     const cx = Math.cos(s.a), sy = Math.sin(s.a), step = Math.min(s.speed * dt, s.len - s.flown), x0 = s.x, y0 = s.y;
     s.x += cx * step; s.y += sy * step; s.flown += step;
     flame({x: s.x - cx * 14, y: s.y - sy * 14}, s.a, 2, '#ff7040', 10);
-    // distância da nave até o trecho percorrido neste quadro
+    // distância da nave até o trecho percorrido neste quadro (o de fragmentação passa por ela sem bater; dos fragmentos de
+    // uma explosão, só o primeiro que acerta causa dano)
     const vx = s.x - x0, vy = s.y - y0, f = clamp(((p.x - x0) * vx + (p.y - y0) * vy) / (vx * vx + vy * vy || 1), 0, 1);
-    if (!safe && Math.hypot(p.x - x0 - vx * f, p.y - y0 - vy * f) < st.r * SCALE * .7) {
+    if (!safe && !s.burst && !s.frag?.hit && Math.hypot(p.x - x0 - vx * f, p.y - y0 - vy * f) < st.r * SCALE * .7) {
       strikes.splice(i, 1);
+      if (s.frag) s.frag.hit = true;
       events.push({kind: 'hit', x: p.x, y: p.y, at: {x: s.x, y: s.y, h: 10}, a: s.a, onPlayer: true, shielded: p.sh > 0});
       hit(p, s.dmg); float(p, '-' + s.dmg, '#ff5040', 1.3); explode(s, 8);
       continue;
     }
-    if (s.flown >= s.len - 1e-6) { strikes.splice(i, 1); if (s.homing) explode(s, 5); } // chegou ao fim sem acertar (o teleguiado se apaga com um estalo)
+    if (s.flown >= s.len - 1e-6) { // chegou ao fim sem acertar (o teleguiado se apaga com um estalo)
+      strikes.splice(i, 1); if (s.homing) explode(s, 5);
+      if (s.burst) { // fragmentação: se parte em círculo, a partir do ponto em que parou
+        const B = ENEMY_MISSILE.burst, frag = {hit: false};
+        explode(s, 12); events.push({kind: 'shot', missile: true, x: s.x, y: s.y, h: 10, c: '#ff5040', mine: false});
+        for (let k = 0; k < B.frags; k++)
+          strikes.push({src: s.src, a: s.a + k / B.frags * 2 * Math.PI, len: B.reach, warn: 0, warn0: 0, dmg: s.dmg, x: s.x, y: s.y, flown: 0, live: true, speed: B.fragSpeed, frag});
+      }
+    }
   }
 
   // ---------- morte do jogador ----------
