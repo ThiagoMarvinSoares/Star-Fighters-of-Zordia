@@ -137,8 +137,8 @@ export const MODS: Record<ModKey, ModDef> = {
   L2: {name: 'Laser Mk2',  type: 'laser',  val: 55,   cost: 1500, model: 'mp2'},
   L3: {name: 'Laser Mk3',  type: 'laser',  val: 120,  cost: 7000, model: 'mk3'},
   S1: {name: 'Escudo Mk1', type: 'shield', val: 300,  cost: 300,  model: 'shield1', color: '#35c8f5'},
-  S2: {name: 'Escudo Mk2', type: 'shield', val: 750,  cost: 1500, model: 'shield2', color: '#35c8f5'},
-  S3: {name: 'Escudo Mk3', type: 'shield', val: 1800, cost: 7000, model: 'shield3', color: '#35c8f5'},
+  S2: {name: 'Escudo Mk2', type: 'shield', val: 750,  cost: 1500, model: 'shield2', color: '#a838f0'},
+  S3: {name: 'Escudo Mk3', type: 'shield', val: 1800, cost: 7000, model: 'shield3', color: '#f5962a'},
   E1: {name: 'Motor Mk1',  type: 'engine', val: 40,   cost: 400,  model: 'engine2', color: '#f0902a'},
   E2: {name: 'Motor Mk2',  type: 'engine', val: 90,   cost: 2000, model: 'engine1', color: '#35c8f5'},
   // mira: val = pontos percentuais somados a ACCURACY. Um slot por nave; a Mk3 completa os 100%: acerta sempre.

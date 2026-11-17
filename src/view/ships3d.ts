@@ -108,7 +108,9 @@ export function adopt(scene: THREE.Object3D, kind: ModelKind, sunk = false) {
     scene.position.sub(at);
     // arma: o cano aponta para o lado que se afasta mais do encaixe. Gira para frente = +X e cima = +Y
     const fv = new THREE.Vector3(), uv = new THREE.Vector3();
-    fv[f] = box.max[f] - at[f] >= at[f] - box.min[f] ? 1 : -1; uv[u] = 1;
+    // Módulo sem "mount": o encaixe é o centro da caixa, então as duas pontas ficam à mesma distância e quem decidiria
+    // seria o arredondamento (o lado mostrado no ícone mudava de arquivo para arquivo). Aí a frente é sempre o + do eixo.
+    fv[f] = kind === 'module' && !mc || box.max[f] - at[f] >= at[f] - box.min[f] ? 1 : -1; uv[u] = 1;
     pivot.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(fv, uv, fv.clone().cross(uv)).transpose());
     pivot.scale.setScalar(LEN[kind] / (size[f] || 1));
   }
@@ -187,6 +189,10 @@ function lit(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
 
 // ---------- ícones: cada modelo da biblioteca é "fotografado" uma vez, de três quartos, para o hangar ----------
 let photo: { renderer: THREE.WebGLRenderer; scene: THREE.Scene; cam: THREE.OrthographicCamera } | undefined;
+// Giro extra na foto de um modelo, em radianos, para ele apontar como os irmãos dele. O Escudo Mk3 é um disco largo e
+// fino: o eixo mais comprido (a "frente" de um módulo) é a largura do disco, e a face dele saía de lado, para a esquerda,
+// enquanto a do Mk1 e a do Mk2, que ficam na ponta do eixo comprido, apontam para a direita.
+const ICON_TURN: Record<string, number> = {'shields/shield3': Math.PI / 2};
 /** Giro para a foto de um módulo (escudo, motor): vira para a câmera o lado onde ficam as partes acesas (o anel
  *  emissor, o bocal), um pouco de lado. Sem partes acesas, usa o três quartos padrão. */
 export function iconYaw(o: THREE.Object3D) {
@@ -220,7 +226,7 @@ export function iconOf(path: string, placeholder = false, px = 256, copies = 1) 
     const one = cache.get(path)!, o = copies > 1 ? new THREE.Group() : one.clone();
     // em grupo: lado a lado (2) ou em triângulo (3), um pouco desencontrados, como se viessem em formação
     if (copies > 1) for (const [x, z] of copies === 2 ? [[-.85, .45], [.85, -.45]] : [[-1.15, .7], [1.15, .7], [0, -.85]]) { const c = one.clone(); c.position.set(x, 0, z); o.add(c); }
-    o.rotation.y = KIND[path.split('/')[0]] === 'module' ? iconYaw(o) : -.7;
+    o.rotation.y = (KIND[path.split('/')[0]] === 'module' ? iconYaw(o) : -.7) + (ICON_TURN[path] ?? 0);
     const box = new THREE.Box3().setFromObject(o), side = box.getSize(new THREE.Vector3()).length() * 1.05;
     o.position.sub(box.getCenter(new THREE.Vector3())); // centro do modelo no ponto para onde a câmera olha
     photo.scene.add(o); aimCamera(photo.cam, {x: 0, y: 0}, side, side);
