@@ -27,7 +27,7 @@ const PLACEHOLDER = new THREE.Mesh(new THREE.ConeGeometry(.45, 2, 5).rotateZ(-Ma
 // ---------- biblioteca de modelos: public/models/<pasta>/<nome>.glb ----------
 // Pastas: ships (naves), weapons, shields, engines, aim e missiles (lasers, escudos, motores, miras e mísseis: só
 // viram ícone no hangar e na barra de atalhos),
-// bases (a estação da base), pets (o robô de reparo, que voa em volta da nave: carregado como nave).
+// bases (a estação da base), pets (o robô de reparo e os P.E.T.s, que voam junto da nave: carregados como nave).
 // O que o jogo espera de um arquivo:
 //  - nave: +Y para cima e frente em +Z (padrão glTF). Tamanho e centro são ajustados sozinhos. Objetos vazios
 //    chamados gun_1, gun_2... marcam onde ficam as armas.

@@ -1,8 +1,8 @@
 // Desenho: lê o estado e pinta o canvas. Nunca altera o estado do jogo.
 // Tudo aqui é canvas 2D, menos as naves: elas são desenhadas em 3D por ships3d.ts e copiadas para cá.
-import { ENEMY_MISSILE, RANGE, STATION_R, PORTAL_R, MISSILE_R, MINE_RANGE, MAPS, MODS, MODEL_DIR, ORES, NPCS } from '../game/data.ts';
+import { ENEMY_MISSILE, PET, PET_LEVELS, RANGE, STATION_R, PORTAL_R, MISSILE_R, MINE_RANGE, MAPS, MODS, MODEL_DIR, ORES, NPCS } from '../game/data.ts';
 import type { Shot } from '../game/state.ts';
-import { world, npcs, save, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, view, map } from '../game/state.ts';
+import { world, npcs, save, stats, cargoUsed, p, pets, levelOf, flying, enemies, rocks, drops, strikes, shots, texts, parts, events, view, map } from '../game/state.ts';
 import type { Stats } from '../game/state.ts';
 import { clamp, dist } from '../game/util.ts';
 import type { Point } from '../game/util.ts';
@@ -45,24 +45,24 @@ const ENEMY_MISSILE_MODEL = 'missiles/missil2';
 // Robô de reparo: enquanto ele conserta (p.fixing), os drones (ModDef.bots: 1, 2 ou 3, conforme o robô equipado) saem
 // de dentro da nave, rondam o casco em roda e lançam nele feixes amarelos de solda, que espirram faíscas no ponto de
 // contato; quando o conserto acaba, voltam e somem dentro dela. É só desenho: o conserto em si é da simulação (sim.ts).
-export const PET_MODEL = 'pets/drone';
-const PET = {r: 7, h: 34, out: 2.6, turn: .9}; // tamanho, altura do voo, raio da ronda (em raios da nave), voltas por s em radianos
-const pet = {on: 0, t: 0, last: 0, n: 1}; // on: 0 = recolhidos na nave, 1 = fora, rondando; n = quantos drones
-const pets = [0, 1, 2].map(() => ({x: 0, y: 0, a: 0})); // posição de cada drone (o objeto também serve de id no palco 3D)
+export const BOT_MODEL = 'pets/drone';
+const BOT = {r: 7, h: 34, out: 2.6, turn: .9}; // tamanho, altura do voo, raio da ronda (em raios da nave), voltas por s em radianos
+const bot = {on: 0, t: 0, last: 0, n: 1}; // on: 0 = recolhidos na nave, 1 = fora, rondando; n = quantos drones
+const bots = [0, 1, 2].map(() => ({x: 0, y: 0, a: 0})); // posição de cada drone (o objeto também serve de id no palco 3D)
 const WELD = '#ffd23a';
 /** faíscas da solda, já na tela (x, y com a inclinação aplicada): riscos curtos que espirram e caem */
 const sparks: { x: number; y: number; vx: number; vy: number; t: number }[] = [];
-function petStep(r: number) {
-  const ms = performance.now(), dt = Math.min(.1, (ms - (pet.last || ms)) / 1000); pet.last = ms;
-  pet.on = clamp(pet.on + (p.fixing ? 1.5 : -2) * dt, 0, 1); // sai em ~0,7 s, volta em 0,5 s
+function botStep(r: number) {
+  const ms = performance.now(), dt = Math.min(.1, (ms - (bot.last || ms)) / 1000); bot.last = ms;
+  bot.on = clamp(bot.on + (p.fixing ? 1.5 : -2) * dt, 0, 1); // sai em ~0,7 s, volta em 0,5 s
   for (let i = sparks.length; i--;) { const s = sparks[i]; s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 260 * dt; if ((s.t -= dt) <= 0) sparks.splice(i, 1); }
   const k = save.mods.find(m => MODS[m].type === 'repair');
-  if (p.fixing && k) pet.n = MODS[k].bots ?? 1; // enquanto voltam, ficam os que saíram
-  if (pet.on <= 0) { pet.t = 0; return []; }
-  pet.t += dt;
-  const d = r * PET.out * pet.on;
-  return pets.slice(0, pet.n).map((o, i) => { // saem por trás da nave e rondam em roda, igualmente espaçados
-    const ang = p.a + Math.PI + pet.t * PET.turn + i / pet.n * 6.2832;
+  if (p.fixing && k) bot.n = MODS[k].bots ?? 1; // enquanto voltam, ficam os que saíram
+  if (bot.on <= 0) { bot.t = 0; return []; }
+  bot.t += dt;
+  const d = r * BOT.out * bot.on;
+  return bots.slice(0, bot.n).map((o, i) => { // saem por trás da nave e rondam em roda, igualmente espaçados
+    const ang = p.a + Math.PI + bot.t * BOT.turn + i / bot.n * 6.2832;
     o.x = p.x + Math.cos(ang) * d; o.y = p.y + Math.sin(ang) * d;
     o.a = Math.atan2(p.y - o.y, p.x - o.x); // de frente para o casco
     return o;
@@ -250,7 +250,7 @@ export function draw() {
   }
   const props = scenery().filter(pr => pr.map === world.map && onScreen(pr, pr.r * 3)), tnow = performance.now() / 60000;
   const ships = npcs.filter(n => onScreen(n, NPCS[n.id].r * 3)); // NPCs do mapa (andam devagar: sim.ts)
-  const out = petStep(st.r);
+  const out = botStep(st.r);
   // alvo de missão (ir até um lugar): um anel tracejado no chão, girando devagar
   const target = questTarget(world.map); // noutro mapa: o portal que leva até lá
   if (target) { ctx.strokeStyle = '#ffd45a'; ctx.setLineDash([10, 8]); ctx.lineDashOffset = -performance.now() / 40; ring(target, target.r); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0; }
@@ -258,7 +258,8 @@ export function draw() {
                 ...vis.map(e => ({id: e, o: e, r: e.t.r, key: e.t.key})),
                 ...stones.map(k => ({id: k, o: {x: k.x, y: k.y, a: k.a + spin}, r: k.r, model: 'asteroids/' + ORES[k.ore].model})),
                 {id: p, o: p, r: st.r, key: save.ship},
-                ...out.map(o => ({id: o, o, r: PET.r * (.3 + .7 * pet.on), model: PET_MODEL, h: PET.h * pet.on})),
+                ...pets.map((q, j) => ({id: q, o: q, r: PET.r, model: `${MODEL_DIR.pet}/${PET_LEVELS[levelOf(flying(j).xp)].model}`, h: q.h})), // os P.E.T.s (sim.ts), cada um com o modelo do nível dele
+                ...out.map(o => ({id: o, o, r: BOT.r * (.3 + .7 * bot.on), model: BOT_MODEL, h: BOT.h * bot.on})),
                 ...props.map(pr => ({id: propId(pr), o: {x: pr.x, y: pr.y, a: pr.a + tnow * pr.spin * 6.2832}, r: pr.r, model: pr.model})),
                 ...ships.map(n => ({id: n, o: n, r: NPCS[n.id].r, model: NPCS[n.id].model, h: NPCS[n.id].h})),
                 ...strikes.filter(s => s.live && onScreen(s)).map(s => ({id: s, o: {x: s.x, y: s.y, a: s.a}, r: MISSILE_R, model: ENEMY_MISSILE_MODEL, h: 10})),
@@ -268,8 +269,8 @@ export function draw() {
   drawParts(false); // explosões e as chamas de quem não está de costas para a câmera: por cima das naves
   // O feixe de cada drone: da frente dele a um ponto que percorre o casco, de ponta a ponta no comprimento da nave e de
   // um lado ao outro na largura, cada drone num ritmo e numa fase próprios. As faíscas saem só de onde o feixe toca.
-  if (p.fixing && pet.on > .8) out.forEach((o, i) => {
-    const t = performance.now() / 1000, sx = o.x + Math.cos(o.a) * PET.r * 1.2, sy = o.y * TILT - PET.h * COSV + Math.sin(o.a) * PET.r * 1.2 * TILT;
+  if (p.fixing && bot.on > .8) out.forEach((o, i) => {
+    const t = performance.now() / 1000, sx = o.x + Math.cos(o.a) * BOT.r * 1.2, sy = o.y * TILT - BOT.h * COSV + Math.sin(o.a) * BOT.r * 1.2 * TILT;
     const along = Math.sin(t * (.9 + .23 * i) + i * 2.1) * st.r * 1.1, across = Math.sin(t * (2.3 + .4 * i) + i * 4.2) * st.r * .45;
     const hx = p.x + Math.cos(p.a) * along - Math.sin(p.a) * across, hy = (p.y + Math.sin(p.a) * along + Math.cos(p.a) * across) * TILT - 6;
     ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = WELD; ctx.lineCap = 'round';
@@ -286,6 +287,10 @@ export function draw() {
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.lineWidth = 2;
   }
   shield(st, performance.now() / 1000);
+  // embaixo de cada P.E.T. com nome, o nome dele, em cinza meio transparente: para saber qual é qual na formação
+  ctx.font = nameFont; ctx.fillStyle = '#c8d0dc'; ctx.globalAlpha = .55;
+  pets.forEach((q, j) => { const n = flying(j).name; if (n) ctx.fillText(n, q.x, q.y * TILT - q.h * COSV + PET.r * SCALE + nameGap); });
+  ctx.globalAlpha = 1;
   for (const e of vis) { // embaixo de cada inimigo: escudo, vida e nome
     const ly = e.y * TILT + e.t.r + 10;
     bar(e.x - 25, ly, 50, 4, e.sh / e.t.sh, '#4cf');

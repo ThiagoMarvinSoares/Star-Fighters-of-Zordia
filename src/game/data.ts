@@ -41,9 +41,9 @@ export const LEASH = 1300;
 /** inimigos não renascem a menos disto do jogador: a área que ele limpou fica vazia enquanto ele estiver nela */
 export const CLEAR = 1400;
 
-export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip' | 'repair';
+export type ModType = 'laser' | 'shield' | 'engine' | 'aim' | 'missile' | 'mining' | 'chip' | 'repair' | 'pet';
 export type ShipKey = 'scout' | 'corvette' | 'cruiser' | 'interceptor' | 'northstar';
-export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1' | 'C2' | 'R0' | 'R1' | 'R2' | 'R3';
+export type ModKey = 'L1' | 'L2' | 'L3' | 'S1' | 'S2' | 'S3' | 'E1' | 'E2' | 'A1' | 'A2' | 'A3' | 'M1' | 'M2' | 'M3' | 'M4' | 'D1' | 'D2' | 'D3' | 'C1' | 'C2' | 'R0' | 'R1' | 'R2' | 'R3' | 'P1';
 export type EnemyKey = 'drone' | 'raider' | 'dreadnought' | 'boss' | 'ferrao' | 'furia';
 /** Toda nave ou inimigo precisa de um modelo 3D e pontos de tiro com esta chave em models.ts. */
 export type ModelKey = ShipKey | EnemyKey | 'station' | 'unsa';
@@ -107,13 +107,13 @@ export interface EnemyDef {
 // Corvette, Mk3 do Cruiser. Ao mexer nos números, confira a espera entre compras (o teste mede a maior delas).
 export const START = {credits: 300, ship: 'scout', mods: ['L1', 'L1', 'S1', 'R0']} as const; // sobra um slot de arma: a 1ª compra é imediata
 export const SHIPS: Record<ShipKey, ShipDef> = {
-  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 1, repair: 1}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
-  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 1, repair: 1}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
-  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1, repair: 1}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
+  scout:    {name: 'Scout',    slots: {laser: 3,  shield: 1, engine: 1, aim: 1, missile: 1, mining: 1, chip: 1, repair: 1, pet: 0}, r: 18, hp: 1200,  speed: 260, cost: 0, cargo: 60},
+  corvette: {name: 'Corvette', slots: {laser: 6,  shield: 2, engine: 2, aim: 1, missile: 1, mining: 1, chip: 1, repair: 1, pet: 1}, r: 22, hp: 4000,  speed: 240, cost: 9000, cargo: 150},
+  cruiser:  {name: 'Cruiser',  slots: {laser: 10, shield: 3, engine: 3, aim: 1, missile: 2, mining: 1, chip: 1, repair: 1, pet: 2}, r: 28, hp: 11000, speed: 210, cost: 30000, cargo: 400},
   // tier 4: a vida do Cruiser, bem mais rápida, com um escudo e um míssil a mais que ele
-  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
+  interceptor: {name: 'Interceptor', slots: {laser: 10, shield: 4, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1, pet: 3}, r: 26, hp: 11000, speed: 300, cost: 60000, cargo: 250},
   // tier 5: a próxima nave do jogador. Ainda fora da loja (soon); números provisórios, acima da Interceptor.
-  northstar: {name: 'Northstar', slots: {laser: 12, shield: 5, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1}, r: 30, hp: 18000, speed: 290, cost: 120000, cargo: 300, soon: true},
+  northstar: {name: 'Northstar', slots: {laser: 12, shield: 5, engine: 3, aim: 1, missile: 3, mining: 1, chip: 1, repair: 1, pet: 4}, r: 30, hp: 18000, speed: 290, cost: 120000, cargo: 300, soon: true},
 };
 /** as naves à venda, na ordem da progressão (sem as que ainda não chegaram: ShipDef.soon) */
 export const FLEET = (Object.keys(SHIPS) as ShipKey[]).filter(k => !SHIPS[k].soon);
@@ -171,14 +171,37 @@ export const MODS: Record<ModKey, ModDef> = {
   R2: {name: 'Robô de Reparo Mk2', type: 'repair', val: 100 / 45, cost: 6000, model: 'drone', bots: 2, effect: 'Casco cheio em 45 s'},
   R3: {name: 'Robô de Reparo Mk3', type: 'repair', val: 100 / 33, cost: 18000, model: 'drone', bots: 3, effect: 'Casco cheio em 33 s'},
   C2: {name: 'Chip de Dano', type: 'chip', val: 20, cost: 10000, model: 'chip2', chip: 'damage', effect: '+20% de dano (lasers e mísseis)', drop: true},
+  // P.E.T.: um drone de combate que voa atrás da nave e atira junto com ela, no mesmo alvo e na mesma cadência dos
+  // lasers; erra como eles. Cada P.E.T. equipado voa e atira por conta própria. Slots: o Scout não tem; da Corvette em
+  // diante, um a mais por nave. Só existe este, que começa no nível 1 e sobe sozinho (PET_LEVELS); val = dano do nível 1.
+  P1: {name: 'P.E.T.', type: 'pet', val: 10, cost: 2000, model: 'pet1', effect: 'Atira junto com a nave; sobe de nível destruindo inimigos e cumprindo missões'},
 };
+/** P.E.T.s em voo: acima da nave, em formação. r = tamanho (como o r das naves), h = altura acima da nave, turn = quão
+ *  rápido a formação acompanha a nave quando ela vira (por segundo; andando, eles vão junto, sem atraso).
+ *  formation: o lugar de cada um, conforme quantos estão equipados, em [para trás, para a direita], medido em "folgas":
+ *  uma folga é o raio da nave mais o do P.E.T., mais gap (1 para trás = logo atrás da popa; 1 para o lado = ao lado do
+ *  casco, sem encostar). Um: atrás. Dois: um de cada lado, quase na altura da nave. Três: em triângulo, um atrás e dois
+ *  dos lados. */
+export const PET = {r: 10, gap: 40, h: 40, turn: 8,
+                    formation: [[[1.35, 0]], [[.45, -1], [.45, 1]], [[1.35, 0], [.45, -1], [.45, 1]]] as [number, number][][]};
+/** Níveis do P.E.T. O jogador ganha experiência de P.E.T. enquanto tem um equipado: cada inimigo destruído vale a
+ *  recompensa dele, e cada missão entregue, o pagamento dela. O nível vale para todos os P.E.T.s do jogador.
+ *  xp = experiência total para chegar ao nível; dmg = % do dano da nave (a soma dos lasers, já com o chip de dano) em
+ *  cada salva de cada P.E.T.; model = public/models/pets/<model>.glb. Números provisórios, a balancear: a ideia é cada
+ *  nível chegar mais ou menos com uma nave nova (Cruiser, Interceptor, depois). */
+export const PET_LEVELS = [
+  {xp: 0,      dmg: 10, model: 'pet1'},
+  {xp: 20000,  dmg: 20, model: 'pet2'},
+  {xp: 100000, dmg: 30, model: 'pet3'},
+  {xp: 300000, dmg: 40, model: 'pet4'},
+];
 /** pasta de cada tipo de módulo dentro de public/models/ */
-export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining', chip: 'chips', repair: 'pets'};
+export const MODEL_DIR: Record<ModType, string> = {laser: 'weapons', shield: 'shields', engine: 'engines', aim: 'aim', missile: 'missiles', mining: 'mining', chip: 'chips', repair: 'pets', pet: 'pets'};
 /** o que o valor do módulo soma; vem colado ao número: "+25 de dano", "+7% de precisão" */
-export const LABEL: Record<ModType, string> = {laser: ' de dano', shield: ' de escudo', engine: ' de velocidade', aim: '% de precisão', missile: ' de dano por míssil', mining: ' de minério por segundo', chip: ' alvos além do principal', repair: '% do casco por segundo'};
+export const LABEL: Record<ModType, string> = {laser: ' de dano', shield: ' de escudo', engine: ' de velocidade', aim: '% de precisão', missile: ' de dano por míssil', mining: ' de minério por segundo', chip: ' alvos além do principal', repair: '% do casco por segundo', pet: '% do dano da nave'};
 /** nome do tipo de slot, no plural e no singular ("3 armas", "1 arma") */
-export const SLOT: Record<ModType, string> = {laser: 'armas', shield: 'escudos', engine: 'motores', aim: 'miras', missile: 'mísseis', mining: 'mineradores', chip: 'chips', repair: 'robôs de reparo'};
-export const SLOT_ONE: Record<ModType, string> = {laser: 'arma', shield: 'escudo', engine: 'motor', aim: 'mira', missile: 'míssil', mining: 'minerador', chip: 'chip', repair: 'robô de reparo'};
+export const SLOT: Record<ModType, string> = {laser: 'armas', shield: 'escudos', engine: 'motores', aim: 'miras', missile: 'mísseis', mining: 'mineradores', chip: 'chips', repair: 'robôs de reparo', pet: 'P.E.T.s'};
+export const SLOT_ONE: Record<ModType, string> = {laser: 'arma', shield: 'escudo', engine: 'motor', aim: 'mira', missile: 'míssil', mining: 'minerador', chip: 'chip', repair: 'robô de reparo', pet: 'P.E.T.'};
 
 // Do mais fraco ao mais forte; quanto mais longe da base, mais alto na lista o inimigo que nasce.
 // Os quatro primeiros caem rápido, para o combate do dia a dia ser ágil; os Dreadnoughts é que são a luta demorada.

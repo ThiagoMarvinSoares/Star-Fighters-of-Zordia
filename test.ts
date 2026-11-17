@@ -1,10 +1,10 @@
 // Teste das regras do jogo, sem navegador: `npm test`. Só usa a simulação (sim.ts), nunca o desenho.
 import assert from 'node:assert/strict';
-import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME, DRONE_ELITE, FERRAO, FURIA, FLEET, NPCS, FURIA_PATROL } from './src/game/data.ts';
+import { ENEMY_MISSILE, BOSS_DROP, PICKUP_R, SHIPS, MODS, ORES, ENEMIES, START, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ACCURACY, MISSILE_CD, MISSILE_CHARGES, MINE_RANGE, PORTAL_R, BOSS, MAPS, HOME, DRONE_ELITE, FERRAO, FURIA, FLEET, NPCS, FURIA_PATROL, PET, PET_LEVELS } from './src/game/data.ts';
 import type { EnemyKey, MapDef, MapKey, ModKey, ShipKey } from './src/game/data.ts';
-import { npcs, parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip } from './src/game/state.ts';
+import { npcs, parseSave, persist, world, best, drops, strikes, rocks, cargoUsed, cargoValue, sellOre, sellCargo, atBase, save, trim, stats, p, enemies, shots, parts, events, buyMod, sellMod, equip, unequip, buyShip, useShip, texts, pets, levelOf, petAt, petXp, renamePet, petLabel, PET_NAME } from './src/game/state.ts';
 import type { Enemy } from './src/game/state.ts';
-import { HARD, ENGINES, mount } from './src/game/models.ts';
+import { HARD, ENGINES, SCALE, PET_GUNS, mount } from './src/game/models.ts';
 import { update, hit, explode, keepOut, travel, resume, guards, solid } from './src/game/sim.ts';
 import { journal, pin, MISSIONS, PLACES, mission, needsTalk, questNow, questGoal, questTarget, questRadio, progress, talkNow, talkDone, arrive, fieldTalk, fieldTalkNow, scenery, cue, replay, talkFor, questPlace, board } from './src/game/missions.ts';
 import { keys, seed } from './src/game/util.ts';
@@ -90,10 +90,10 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
 // alcance: nunca espera mais de 8 minutos por uma compra, e a 1ª é imediata. (Ele não fica parado juntando para um item
 // caro, como o Míssil Mk4, enquanto há melhoria mais barata disponível.)
 {
-  type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[]; chip: ModKey[]; repair: ModKey[] };
+  type Kit = { ship: ShipKey; laser: ModKey[]; shield: ModKey[]; engine: ModKey[]; aim: ModKey[]; missile: ModKey[]; mining: ModKey[]; chip: ModKey[]; repair: ModKey[]; pet: ModKey[] };
   const ships = FLEET, sum = (l: ModKey[]) => l.reduce((a, m) => a + MODS[m].val, 0);
-  const income = (k: Kit) => { // créditos por minuto
-    const dps = (sum(k.laser) + sum(k.missile) / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
+  const income = (k: Kit) => { // créditos por minuto (o P.E.T. soma uma parte do dano dos lasers)
+    const dps = (sum(k.laser) * (1 + sum(k.pet) / 100) + sum(k.missile) / MISSILE_CD) * Math.min(1, ACCURACY + sum(k.aim) / 100), sh = sum(k.shield), hp = SHIPS[k.ship].hp, spd = SHIPS[k.ship].speed + sum(k.engine);
     return Math.max(0, ...ENEMIES.map(e => {
       const fight = (e.hp + e.sh) / dps, taken = e.dmg / 1.3 * fight;
       if (taken > sh + .35 * hp) return 0; // não aguenta caçar esse em sequência
@@ -115,7 +115,7 @@ for (const k of keys(SHIPS) as ShipKey[]) assert.equal(HARD[k].length, SHIPS[k].
     return out;
   };
   const byType = (t: string) => START.mods.filter(m => MODS[m].type === t);
-  let kit: Kit = {ship: START.ship, laser: byType('laser'), shield: byType('shield'), engine: byType('engine'), aim: byType('aim'), missile: byType('missile'), mining: byType('mining'), chip: byType('chip'), repair: byType('repair')}, bank: number = START.credits, worst = 0, n = 0;
+  let kit: Kit = {ship: START.ship, laser: byType('laser'), shield: byType('shield'), engine: byType('engine'), aim: byType('aim'), missile: byType('missile'), mining: byType('mining'), chip: byType('chip'), repair: byType('repair'), pet: byType('pet')}, bank: number = START.credits, worst = 0, n = 0;
   for (let opts = options(kit); opts.length; opts = options(kit), n++) {
     const inc = income(kit), ehp = (k: Kit) => SHIPS[k.ship].hp + sum(k.shield);
     const waitFor = (cost: number) => Math.max(0, cost - bank) / inc;
@@ -161,6 +161,93 @@ assert(Number.isFinite(p.x) && Number.isFinite(p.hp));
   assert(events.some(ev => ev.kind === 'shot' && ev.mine && ev.mod === 'L1'));
   assert(e.hp + e.sh < hp0);
 }
+
+// P.E.T.s: um por P.E.T. equipado, atrás da nave, acima dela e lado a lado; cada um atira junto com cada salva, no
+// mesmo alvo, com a parte dele do dano da nave
+{
+  reset();
+  const keep = [...save.mods], e = nearest('raider');
+  const xp0 = save.petInfo; delete save.petInfo;
+  save.mods.push('P1', 'P1'); const st = stats();
+  park(e, 150); frames(1);
+  assert.equal(pets.length, 2);
+  const c = Math.cos(p.a), s = Math.sin(p.a), at = pets.map(q => ({back: (q.x - p.x) * c + (q.y - p.y) * s, side: -(q.x - p.x) * s + (q.y - p.y) * c}));
+  // dois: um de cada lado, fora do casco, quase na altura da nave, e acima dela
+  for (const [i, q] of pets.entries()) assert(q.hp && q.h > 0 && Math.abs(at[i].side) > (st.r + PET.r) * SCALE && Math.abs(at[i].back) < (st.r + PET.r) * SCALE, `dos lados e acima: ${JSON.stringify(at[i])}`);
+  assert(Math.abs(at[0].side + at[1].side) < 1, `um de cada lado: ${at[0].side} ${at[1].side}`);
+  p.target = e; p.firing = true; p.cd = 0; frames(1);
+  const volley = (lvs: number[]) => { // os tiros dos P.E.T.s numa salva, cada um com o dano do nível dele
+    pets.forEach((q, j) => {
+      const L = PET_LEVELS[lvs[j]], ours = shots.filter(x => x.src === q), guns = PET_GUNS[L.model], each = st.dmg * L.dmg / 100 / guns.length;
+      assert.equal(ours.length, guns.length, 'um tiro por cano');
+      for (const x of ours) assert(x.tgt === e && Math.abs(x.dmg - each) <= each * .16 + 1, `dano ${x.dmg}`);
+    });
+  };
+  volley([0, 0]);
+  // cada um sobe de nível com a experiência dele (recompensa de quem é destruído, pagamento das missões, para todos os
+  // equipados): um P.E.T. novo começa no nível 1 ao lado de um veterano
+  save.petInfo = {mods: [{xp: PET_LEVELS[3].xp - 10, name: 'Faísca'}, {xp: 0, name: ''}], inv: []};
+  const n0 = texts.length;
+  petXp(10); assert.deepEqual([levelOf(petAt('mods', save.mods.indexOf('P1'))!.xp), levelOf(save.petInfo.mods[1].xp)], [3, 0]);
+  assert(texts.slice(n0).some(x => x.s === 'Faísca subiu para o nível 4!'), 'o aviso usa o nome do P.E.T.');
+  shots.length = 0; p.cd = 0; frames(1); volley([3, 0]);
+  const [first] = pets;
+  save.mods.splice(0, save.mods.length, ...keep); frames(1);
+  assert(!pets.length && !first.hp, 'sem P.E.T. equipado, nada voa');
+  const before = JSON.stringify(save.petInfo!.mods); petXp(1e9); assert.equal(JSON.stringify(save.petInfo!.mods), before, 'sem P.E.T. equipado, ninguém ganha experiência');
+  if (xp0 === undefined) delete save.petInfo; else save.petInfo = xp0;
+  p.firing = false; shots.length = 0;
+}
+// formação: um P.E.T. fica logo atrás da nave; três, em triângulo: um atrás e dois dos lados. Andando em linha reta,
+// vão junto, sem atraso
+{
+  reset();
+  const keep = [...save.mods], xp0 = save.petInfo;
+  save.mods.push('P1', 'P1', 'P1'); p.tx = p.x + 3000; p.ty = p.y; frames(30); // já virada e andando para a direita
+  const rel = () => pets.map(q => { const dx = q.x - p.x, dy = q.y - p.y; return {back: -(dx * Math.cos(p.a) + dy * Math.sin(p.a)), side: -dx * Math.sin(p.a) + dy * Math.cos(p.a)}; });
+  const hull = (stats().r + PET.r) * SCALE, [tail, l, r] = rel();
+  assert(Math.abs(tail.side) < 1e-6 && tail.back > hull && Math.abs(l.back - r.back) < 1e-6 && l.back < tail.back - hull
+         && Math.abs(l.side + r.side) < 1e-6 && r.side > hull, `triângulo: ${JSON.stringify(rel())}`);
+  save.mods.splice(save.mods.length - 2, 2); frames(1);
+  const [one] = rel(); assert(Math.abs(one.side) < 1e-6 && one.back > hull, `um, logo atrás: ${JSON.stringify(one)}`);
+  save.mods.push('P1', 'P1'); frames(1);
+  const before = JSON.stringify(rel().map(o => [o.back.toFixed(3), o.side.toFixed(3)])), x0 = p.x;
+  frames(10);
+  assert(p.x > x0 + 30 && JSON.stringify(rel().map(o => [o.back.toFixed(3), o.side.toFixed(3)])) === before, 'em linha reta, a formação não fica para trás');
+  save.mods.splice(0, save.mods.length, ...keep); if (xp0) save.petInfo = xp0; else delete save.petInfo; frames(1);
+}
+// a experiência acompanha cada P.E.T.: ao desequipar, equipar, trocar de nave e no progresso salvo
+{
+  const keep = {ship: save.ship, owned: [...save.owned], mods: [...save.mods], inv: [...save.inv], petInfo: save.petInfo};
+  p.x = BASE.x; p.y = BASE.y; frames(1);
+  save.ship = 'cruiser'; save.owned = ['scout', 'cruiser']; save.mods = ['L1', 'P1', 'P1']; save.inv = ['P1', 'S1'];
+  save.petInfo = {mods: [{xp: 100, name: 'A'}, {xp: 200, name: 'B'}], inv: [{xp: 300, name: 'C'}]};
+  const xpAt = (from: 'mods' | 'inv', i: number) => petAt(from, i)!.xp;
+  const all = () => [...save.mods.flatMap((k, i) => k === 'P1' ? [xpAt('mods', i)] : []), ...save.inv.flatMap((k, i) => k === 'P1' ? [xpAt('inv', i)] : [])];
+  assert(unequip(1)); assert.deepEqual(all(), [200, 300, 100], 'o desequipado vai para o fim do inventário com a experiência dele');
+  assert(equip(save.inv.indexOf('P1'))); assert.deepEqual(all(), [200, 300, 100]);
+  assert.deepEqual([xpAt('mods', 1), xpAt('mods', 2)], [200, 300]);
+  assert.deepEqual([petAt('mods', 1)!.name, petAt('mods', 2)!.name], ['B', 'C'], 'o nome vai junto com a experiência');
+  // nome: só em P.E.T.s; sem caracteres de controle, com espaço nas pontas cortado e no máximo PET_NAME letras; vazio volta a "P.E.T."
+  assert(!renamePet('mods', 0, 'x'), 'um laser não tem nome');
+  assert(renamePet('mods', 2, '  Faís\nca  ')); assert.equal(petAt('mods', 2)!.name, 'Faísca');
+  renamePet('mods', 2, 'x'.repeat(40)); assert.equal(petAt('mods', 2)!.name.length, PET_NAME);
+  renamePet('mods', 2, '   '); assert.equal(petLabel(petAt('mods', 2)!), 'P.E.T.');
+  renamePet('mods', 2, 'C');
+  assert(sellMod('mods', 1)); assert.deepEqual(all(), [300, 100], 'vendido, leva a experiência embora');
+  assert(useShip('scout')); assert.deepEqual(save.inv.filter(k => k === 'P1').length, 2); assert.deepEqual(all().sort(), [100, 300]);
+  // progresso salvo numa Corvette (1 slot) com 2 P.E.T.s equipados: o que sobra vai para o inventário com a experiência dele
+  // (o nome que chega do progresso salvo passa pela mesma limpeza)
+  const got = parseSave({credits: 0, ship: 'corvette', mods: ['P1', 'L1', 'P1'], inv: ['P1'],
+                         petInfo: {mods: [{xp: 5, name: 'Um'}, {xp: 7, name: 'Dois\u0007'}], inv: [{xp: 9, name: 42}]}})!;
+  assert.deepEqual([got.mods, got.inv, got.petInfo], [['P1', 'L1'], ['P1', 'P1'], {mods: [{xp: 5, name: 'Um'}], inv: [{xp: 9, name: ''}, {xp: 7, name: 'Dois'}]}]);
+  Object.assign(save, keep); if (!keep.petInfo) delete save.petInfo;
+}
+// slots de P.E.T.: o Scout não tem; da Corvette em diante, um a mais por nave
+assert.deepEqual(FLEET.map(k => SHIPS[k].slots.pet), [0, 1, 2, 3]);
+// todo P.E.T. tem os pontos de tiro do modelo dele
+for (const l of PET_LEVELS) assert(PET_GUNS[l.model]?.length, l.model);
+assert.deepEqual(keys(MODS).filter(k => MODS[k].type === 'pet'), ['P1'], 'só se compra o P.E.T. do nível 1');
 
 // precisão: sem mira, cerca de 75% dos tiros acertam; com a Mira Mk3, todos. Tiro que erra não causa dano
 {

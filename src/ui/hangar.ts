@@ -3,9 +3,9 @@
 // desligados. Abas: Equipamento: a nave à esquerda, as casas de equipamento por tipo no
 // meio e o inventário (itens guardados) à direita. Naves: escolher e comprar naves. Loja: comprar módulos, por categoria.
 // As regras de compra, venda e equipar ficam em state.ts; aqui é só a tela.
-import { SHIPS, FLEET, MODS, ORES, ORE_STACK, LABEL, SLOT, SLOT_ONE, MODEL_DIR, ACCURACY } from '../game/data.ts';
+import { SHIPS, FLEET, MODS, ORES, ORE_STACK, LABEL, SLOT, SLOT_ONE, MODEL_DIR, ACCURACY, PET_LEVELS } from '../game/data.ts';
 import type { ModDef, ModKey, ModType, OreKey, ShipDef, ShipKey } from '../game/data.ts';
-import { save, stats, count, freeSlot, buyMod, sellMod, equip, unequip, buyShip, useShip, cargoUsed, cargoValue, sellOre, sellCargo, atBase } from '../game/state.ts';
+import { save, stats, count, freeSlot, buyMod, sellMod, equip, unequip, buyShip, useShip, cargoUsed, cargoValue, sellOre, sellCargo, atBase, levelOf, petAt, petLabel, renamePet, PET_NAME } from '../game/state.ts';
 import { keys } from '../game/util.ts';
 import { TILT } from '../view/camera.ts';
 import { createStage, iconOf, onModelLoaded } from '../view/ships3d.ts';
@@ -15,7 +15,8 @@ import { board, journal } from '../game/missions.ts';
 import { journalHtml, journalClick, trackFolds } from './journal.ts';
 
 const el = document.getElementById('shop')!;
-const slotText = (f: (t: ModType) => number) => keys(SLOT).map(t => `${f(t)} ${f(t) === 1 ? SLOT_ONE[t] : SLOT[t]}`).join(' · ');
+// tipo sem slot na nave (o Scout não leva P.E.T.) não aparece
+const slotText = (f: (t: ModType) => number) => keys(SLOT).filter(t => f(t) > 0).map(t => `${f(t)} ${f(t) === 1 ? SLOT_ONE[t] : SLOT[t]}`).join(' · ');
 const cr = (n: number) => n.toLocaleString('pt-BR') + ' cr';
 
 // ícones desenhados à mão: caminhos SVG de traço, viewBox 24x24
@@ -26,6 +27,7 @@ const I = {
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   ship: 'M12 2l2.5 7 7.5 5-7 1.5L12 22l-3-6.5L2 14l7.5-5z',
   chip: 'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
+  pet: 'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM8 12H3M16 12h5M3 9v6M21 9v6M12 11v2',
   repair: 'M14 6a4 4 0 0 0 5 5l-9 9a2 2 0 0 1-3-3l9-9a4 4 0 0 0-2-2zM7 4l3 3-2 2-3-3',
   left: 'M15 4l-8 8 8 8',
   right: 'M9 4l8 8-8 8',
@@ -41,10 +43,13 @@ const I = {
   mining: 'M4 20l9-9M9 5c5-2 9 0 11 4-3-2-6-2-8-1zM11 7l5 5',
   box: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8',
 };
+// texto do jogador (nome de P.E.T.) dentro do HTML da tela
+const esc = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const svg = (d: string) => `<svg viewBox="0 0 24 24"><path d="${d}"/></svg>`;
-const ICON: Record<ModType, string> = {laser: I.laser, shield: I.shield, engine: I.engine, aim: I.target, missile: I.missile, mining: I.mining, chip: I.chip, repair: I.repair};
+const ICON: Record<ModType, string> = {laser: I.laser, shield: I.shield, engine: I.engine, aim: I.target, missile: I.missile, mining: I.mining, chip: I.chip, repair: I.repair, pet: I.pet};
 // ícone de um módulo: a foto do modelo 3D dele; enquanto o .glb não carrega (ou se não existe), o desenho do tipo
-const pic = (k: ModKey) => { const m = MODS[k], u = m.model && iconOf(`${MODEL_DIR[m.type]}/${m.model}`, false, 256, m.bots); return u ? `<img src="${u}" alt="">` : svg(ICON[m.type]); };
+// (o P.E.T. aparece com o modelo do nível dele: xp = experiência daquele P.E.T.; na loja, 0)
+const pic = (k: ModKey, xp = 0) => { const m = MODS[k], model = m.type === 'pet' ? PET_LEVELS[levelOf(xp)].model : m.model, u = model && iconOf(`${MODEL_DIR[m.type]}/${model}`, false, 256, m.bots); return u ? `<img src="${u}" alt="">` : svg(ICON[m.type]); };
 
 // teto das barras: o máximo que qualquer nave alcança com os melhores módulos
 const best = (t: ModType) => Math.max(...keys(MODS).filter(k => MODS[k].type === t).map(k => MODS[k].val));
@@ -60,14 +65,20 @@ let cat: ModType = 'laser', pick: ModKey = 'L1'; // aba Loja: categoria aberta e
 // aba Equipamento: item selecionado, da nave ('mods') ou do inventário ('inv')
 type From = 'mods' | 'inv';
 let sel: { from: From; i: number } | null = null;
+let asking = false; // vender um P.E.T. pede confirmação (Sim/Não): a experiência e o nome dele se perdem
 let lastClick = {key: '', t: 0}; // para reconhecer o duplo clique mesmo com a tela sendo redesenhada entre os dois
-const TYPE_NAME: Record<ModType, string> = {laser: 'Arma', shield: 'Gerador de escudo', engine: 'Motor', aim: 'Computador de mira', missile: 'Míssil', mining: 'Módulo de mineração', chip: 'Chip', repair: 'Robô de reparo'};
+const TYPE_NAME: Record<ModType, string> = {laser: 'Arma', shield: 'Gerador de escudo', engine: 'Motor', aim: 'Computador de mira', missile: 'Míssil', mining: 'Módulo de mineração', chip: 'Chip', repair: 'Robô de reparo', pet: 'P.E.T. (drone de combate)'};
 
 // motivo para desligar tudo que mexe no equipamento ou nos créditos: vazio na base, preenchido fora dela.
 // É só o aviso na tela: quem barra de verdade são as regras em state.ts.
 const away = () => atBase() ? '' : 'Só na zona segura da base';
 // o efeito de um item, como aparece nas fichas: "+25 de dano", ou o texto próprio do item
-const effect = (m: ModDef) => m.effect ?? `+${m.val}${LABEL[m.type]}`;
+const effect = (m: ModDef, xp = 0) => m.type === 'pet' ? petText(xp) : m.effect ?? `+${m.val}${LABEL[m.type]}`;
+// P.E.T.: o nível, o dano dele e quanto falta para o próximo
+function petText(xp: number) {
+  const i = levelOf(xp), l = PET_LEVELS[i], next = PET_LEVELS[i + 1];
+  return `Nível ${i + 1} · ${l.dmg}% do dano da nave · ` + (next ? `${Math.floor(xp).toLocaleString('pt-BR')}/${next.xp.toLocaleString('pt-BR')} de experiência` : 'nível máximo');
+}
 // atributo disabled com o motivo no tooltip; why vazio = liberado
 const off = (why: string) => why ? `disabled title="${why}"` : '';
 
@@ -89,8 +100,9 @@ function shipPane(k: ShipKey) {
 
 // ---------- aba Equipamento ----------
 // casa com um item: quadrado com o ícone, borda na cor do tipo; todas do mesmo tamanho, ocupadas ou vazias
-const cell = (from: From, i: number, k: ModKey) => { const m = MODS[k]; return `<button class="cell t-${m.type}${sel?.from === from && sel.i === i ? ' on' : ''}"
-  data-from="${from}" data-i="${i}" title="${m.name} · ${effect(m)}">${pic(k)}</button>`; };
+const cell = (from: From, i: number, k: ModKey) => { const m = MODS[k], pet = petAt(from, i), xp = pet?.xp ?? 0;
+  return `<button class="cell t-${m.type}${sel?.from === from && sel.i === i ? ' on' : ''}"
+  data-from="${from}" data-i="${i}" title="${pet ? esc(petLabel(pet)) : m.name} · ${effect(m, xp)}">${pic(k, xp)}</button>`; };
 const empties = (n: number) => '<span class="cell empty"></span>'.repeat(Math.max(0, n));
 // Grupos recolhíveis (nave e inventário): clicar no título esconde ou mostra as casas. Não é salvo: ao recarregar a
 // página, tudo volta aberto. id = 'mods-<tipo>' ou 'inv-<tipo>'; lock = título sem o que recolher (grupo vazio).
@@ -102,8 +114,9 @@ const ofType = (from: From, t: ModType) => save[from].flatMap((m, i) => MODS[m].
 // um grupo por tipo, com uma casa por slot da nave; os itens equipados ocupam as primeiras
 function slotGroups() {
   const st = stats();
-  return keys(SLOT).map(t => {
+  return keys(SLOT).flatMap(t => {
     const idx = ofType('mods', t), id = 'mods-' + t;
+    if (!st.slots[t] && !idx.length) return []; // a nave não leva esse tipo
     return `<section class="t-${t}">${head(id, t, `${idx.length}/${st.slots[t]}`)}${folded.has(id) ? '' :
       `<div class="cells">${idx.map(i => cell('mods', i, save.mods[i])).join('')}${empties(st.slots[t] - idx.length)}</div>`}</section>`;
   }).join('');
@@ -135,8 +148,14 @@ function detail() {
   const m = MODS[k];
   const move = sel.from === 'inv' ? `<button class="buy" data-do="equip" ${off(away() || (freeSlot(m.type) ? '' : `Sem slot livre de ${SLOT[m.type]}`))}>Equipar</button>`
                                   : `<button class="buy" data-do="unequip" ${off(away())}>Desequipar</button>`;
-  return `<div class="det t-${m.type}"><span class="ic">${pic(k)}</span>
-    <div><b>${m.name}</b><small>${effect(m)}</small><small class="pr">${svg(I.coin)}${cr(m.cost)}</small></div>
+  // P.E.T.: no lugar do título, o nome dele, editável (Enter ou sair do campo grava)
+  const pet = petAt(sel.from, sel.i), xp = pet?.xp ?? 0;
+  if (pet && asking) return `<div class="det t-${m.type}"><span class="ic">${pic(k, xp)}</span>
+    <div><b>Vender ${esc(petLabel(pet))}?</b><small>Tem certeza? O nível e o nome dele se perdem.</small><small class="pr">${svg(I.coin)}${cr(m.cost / 2)}</small></div>
+    <div class="btns"><button class="sell" data-do="sellyes" ${off(away())}>Sim</button><button class="buy" data-do="sellno">Não</button></div></div>`;
+  const title = pet ? `<input class="name" data-rename value="${esc(pet.name)}" placeholder="P.E.T. (dê um nome)" maxlength="${PET_NAME}" title="Nome do P.E.T.">` : `<b>${m.name}</b>`;
+  return `<div class="det t-${m.type}"><span class="ic">${pic(k, xp)}</span>
+    <div>${title}<small>${effect(m, xp)}</small><small class="pr">${svg(I.coin)}${cr(m.cost)}</small></div>
     <div class="btns">${move}<button class="sell" data-do="sell" ${off(away())}>Vender · ${cr(m.cost / 2)}</button></div></div>`;
 }
 // inventário: itens comprados e guardados, separados pelas mesmas categorias da loja. Todas aparecem, na mesma ordem,
@@ -216,10 +235,18 @@ function drawPreview() {
 let sig = '', pressed = false;
 const signature = () => `${save.credits}|${save.ship}|${save.mods}|${save.inv}|${keys(ORES).map(k => Math.floor(save.cargo[k]))}|${atBase()}|${tab === 'missions' ? JSON.stringify(journal()) : board().length}`;
 el.addEventListener('pointerdown', () => { pressed = true; });
+// nome de P.E.T.: grava ao apertar Enter ou sair do campo. Sem refazer a tela aqui: sair do campo clicando noutra casa
+// dispara isto no meio do clique, e trocar a tela nessa hora faria o clique se perder (o clique refaz a tela depois)
+el.addEventListener('change', ev => {
+  const t = ev.target as HTMLInputElement;
+  if (t.dataset.rename !== undefined && sel) renamePet(sel.from, sel.i, t.value);
+});
+el.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (ev.target as HTMLElement).dataset.rename !== undefined) { (ev.target as HTMLInputElement).blur(); renderShop(); } }); // Enter: grava e já mostra o nome limpo
+const typing = () => document.activeElement instanceof HTMLInputElement && el.contains(document.activeElement); // não refaz a tela no meio da digitação
 addEventListener('pointerup', () => { pressed = false; });
 function spin(ts: number) {
   ang = ts / 2500;
-  if (!pressed && signature() !== sig) renderShop(); else drawPreview();
+  if (!pressed && !typing() && signature() !== sig) renderShop(); else drawPreview();
   raf = requestAnimationFrame(spin);
 }
 
@@ -249,6 +276,9 @@ function twice(key: string) {
 // ação sobre o item selecionado no Equipamento; como o item muda de lugar, a seleção deixa de valer
 function act(what: string) {
   if (!sel) return;
+  if (what === 'sellno') { asking = false; return; }
+  if (what === 'sell' && petAt(sel.from, sel.i)) { asking = true; return; } // P.E.T.: pergunta antes
+  if (what === 'sellyes') what = 'sell';
   const ok = what === 'equip' ? equip(sel.i) : what === 'unequip' ? unequip(sel.i) : what === 'sell' && sellMod(sel.from, sel.i);
   if (!ok) return;
   if (what === 'sell') ui('sell');
@@ -266,7 +296,7 @@ el.onclick = ev => {
   if (d.tab) tab = d.tab as Tab;
   else if (d.from) { // casa do Equipamento: um clique seleciona; duplo clique equipa ou desequipa
     const from = d.from as From, i = +d.i!;
-    sel = {from, i}; oreSel = null;
+    sel = {from, i}; oreSel = null; asking = false;
     if (twice(from + i)) act(from === 'inv' ? 'equip' : 'unequip');
   }
   else if (d.ore) { oreSel = {ore: d.ore as OreKey, s: +d.s!, n: +d.n!}; sel = null; }

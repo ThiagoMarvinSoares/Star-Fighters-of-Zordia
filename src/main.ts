@@ -6,7 +6,7 @@ import { keys } from './game/util.ts';
 import { pathOf, preload } from './view/ships3d.ts';
 import { applyInput } from './ui/input.ts';
 import { update, resume } from './game/sim.ts';
-import { draw, preloadImages, IMAGES, PET_MODEL } from './view/render.ts';
+import { draw, preloadImages, IMAGES, BOT_MODEL } from './view/render.ts';
 import { ui } from './view/camera.ts';
 import { syncHotbar } from './ui/hotbar.ts';
 import { playEvents, preloadSounds } from './view/audio.ts';
@@ -66,7 +66,7 @@ const WAIT = 90;
 const all = Object.values(MAPS); // de todos os mapas: passar por um portal não mostra nada aparecendo aos poucos
 const models = [...new Set([pathOf('station'), ...FLEET.map(k => pathOf(k)), ...all.flatMap(m => m.enemies.map(e => pathOf(e.key))),
                             ...all.flatMap(m => [...(m.npcs ?? []).map(n => NPCS[n.id].model), ...(m.boss ? [pathOf(m.boss.def.key)] : []), ...(m.guards ?? []).map(g => pathOf(g.def.key)), ...m.ores.map(o => 'asteroids/' + ORES[o].model)]),
-                            ...keys(MODS).flatMap(k => MODS[k].model ? [`${MODEL_DIR[MODS[k].type]}/${MODS[k].model}`] : []), PET_MODEL])];
+                            ...keys(MODS).flatMap(k => MODS[k].model ? [`${MODEL_DIR[MODS[k].type]}/${MODS[k].model}`] : []), BOT_MODEL])];
 const screen = document.getElementById('loading'), total = models.length + IMAGES + 1; // + 1 = os sons, contados juntos
 let done = 0;
 const tick = () => {

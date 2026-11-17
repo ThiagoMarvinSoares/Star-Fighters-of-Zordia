@@ -1,5 +1,5 @@
 // Estado do jogo: o que muda durante a partida. A simulação escreve aqui, o desenho só lê.
-import { START, SHIPS, MODS, ORES, ACCURACY, MAPS, HOME } from './data.ts';
+import { START, SHIPS, MODS, ORES, ACCURACY, MAPS, HOME, PET_LEVELS } from './data.ts';
 import type { EnemyDef, MapDef, MapKey, ModKey, ModType, OreKey, ShipKey, NpcKey } from './data.ts';
 import type { Vec3 } from './models.ts';
 
@@ -34,7 +34,15 @@ export interface Save {
   paid?: string[];
   /** do tutorial antigo, de antes das missões: só lidos uma vez, para continuar do mesmo ponto (ver game/missions.ts) */
   tut?: number; tutN?: number;
+  /** a ficha de cada P.E.T. (experiência e nome): mods[j] é a do j-ésimo P.E.T. de mods, na ordem da lista, e o mesmo
+   *  para inv. Quem move itens entre as listas (as funções do hangar, abaixo) move a ficha junto. */
+  petInfo?: { mods: PetInfo[]; inv: PetInfo[] };
 }
+/** um P.E.T. do jogador: experiência (data.ts, PET_LEVELS) e o nome que o jogador deu ('' = sem nome) */
+export interface PetInfo { xp: number; name: string }
+export const PET_NAME = 16;
+/** limpa um nome de P.E.T. vindo do jogador ou do progresso salvo: sem caracteres de controle, no máximo PET_NAME letras */
+export const petName = (s: unknown) => typeof s === 'string' ? s.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, PET_NAME) : '';
 export interface Stats {
   maxHp: number; maxSh: number; dmg: number; speed: number;
   /** chance de cada tiro acertar, de 0 a 1 */
@@ -109,8 +117,11 @@ export interface Drop { x: number; y: number; item: ModKey }
 export interface Rock { ore: OreKey; x: number; y: number; a: number; r: number; left: number }
 /** um NPC no mapa atual (MapDef.npcs): onde está, para onde aponta e a próxima parada da rota */
 export interface Npc { id: NpcKey; x: number; y: number; a: number; next: number }
+/** um P.E.T. em voo (módulo mod, do tipo 'pet'), h acima do plano; hp 0 = fora (desequipado, ou acabou de trocar de mapa
+ *  ou de renascer: reaparece já no lugar) */
+export interface Pet { x: number; y: number; a: number; h: number; hp: number; mod: ModKey }
 export interface Shot {
-  src: Player | Enemy; tgt: Player | Enemy;
+  src: Player | Enemy | Pet; tgt: Player | Enemy;
   /** raio da nave que atirou e ponto de fixação de onde sai */
   r: number; hard: Vec3;
   dmg: number; c: string;
@@ -134,7 +145,7 @@ export interface FloatText { x: number; y: number; s: string; c: string; t: numb
 
 // descarta módulos desconhecidos ou que passam do limite do tipo na nave
 export const trim = (mods: unknown[], ship: ShipKey): ModKey[] => {
-  const n: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0, repair: 0};
+  const n: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0, repair: 0, pet: 0};
   return mods.filter((m): m is ModKey =>
     typeof m === 'string' && Object.hasOwn(MODS, m) && ++n[MODS[m as ModKey].type] <= SHIPS[ship].slots[MODS[m as ModKey].type]);
 };
@@ -159,15 +170,26 @@ export function parseSave(s: any): Save | null {
       // perdem: vão para o inventário.
       const mods = trim(s.mods, s.ship), left = [...mods];
       const spare: ModKey[] = [];
+      // ficha dos P.E.T.s: acompanha cada um, inclusive os que vão para o inventário
+      const px = s.petInfo && typeof s.petInfo === 'object' ? s.petInfo : {};
+      const xp = (l: unknown, j: number): PetInfo => { const o = Array.isArray(l) && l[j] && typeof l[j] === 'object' ? l[j] : {};
+                                                      return {xp: Number.isFinite(o.xp) && o.xp > 0 ? +o.xp : 0, name: petName(o.name)}; };
+      const modsXp: PetInfo[] = [], spareXp: PetInfo[] = [];
+      let pj = 0;
       for (const m of s.mods as unknown[]) if (typeof m === 'string' && Object.hasOwn(MODS, m)) {
-        const i = left.indexOf(m as ModKey);
-        if (i >= 0) left.splice(i, 1); else spare.push(m as ModKey); // o que trim deixou de fora
+        const i = left.indexOf(m as ModKey), pet = MODS[m as ModKey].type === 'pet';
+        if (i >= 0) { left.splice(i, 1); if (pet) modsXp.push(xp(px.mods, pj)); }
+        else { spare.push(m as ModKey); if (pet) spareXp.push(xp(px.mods, pj)); } // o que trim deixou de fora
+        if (pet) pj++;
       }
+      const inv: ModKey[] = Array.isArray(s.inv) ? s.inv.filter((m: unknown) => typeof m === 'string' && Object.hasOwn(MODS, m)) : [];
+      const invXp = [...inv.filter(m => MODS[m].type === 'pet').map((_, j) => xp(px.inv, j)), ...spareXp];
       return {credits: +s.credits, ship: s.ship, mods,
               // save antigo (sem lista de naves): fica com a atual e as mais baratas que ela
               owned: Array.isArray(s.owned) ? [...new Set<ShipKey>([s.ship, ...s.owned.filter((k: unknown) => typeof k === 'string' && Object.hasOwn(SHIPS, k))])]
                                             : (Object.keys(SHIPS) as ShipKey[]).filter(k => SHIPS[k].cost <= SHIPS[s.ship as ShipKey].cost),
-              inv: [...(Array.isArray(s.inv) ? s.inv.filter((m: unknown) => typeof m === 'string' && Object.hasOwn(MODS, m)) : []), ...spare],
+              inv: [...inv, ...spare],
+              ...([...modsXp, ...invXp].some(o => o.xp || o.name) && {petInfo: {mods: modsXp, inv: invXp}}),
               cargo: emptyCargo(s.cargo),
               ...(s.pos && Object.hasOwn(MAPS, s.pos.map) && [s.pos.x, s.pos.y, s.pos.hp, s.pos.sh].every(Number.isFinite)
                   && {pos: {map: s.pos.map, x: +s.pos.x, y: +s.pos.y, hp: +s.pos.hp, sh: +s.pos.sh}}),
@@ -202,7 +224,7 @@ export const best = (type: ModType): ModKey | undefined => save.mods.filter(m =>
 export const count = (type: ModType) => save.mods.filter(m => MODS[m].type === type).length;
 // atributos da nave atual somados aos módulos equipados
 export function stats(): Stats {
-  const s = SHIPS[save.ship], t: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0, repair: 0};
+  const s = SHIPS[save.ship], t: Record<ModType, number> = {laser: 0, shield: 0, engine: 0, aim: 0, missile: 0, mining: 0, chip: 0, repair: 0, pet: 0};
   for (const m of save.mods) t[MODS[m].type] += MODS[m].val;
   const chips = save.mods.map(m => MODS[m]).filter(m => m.type === 'chip');
   const multi = chips.filter(m => m.chip === 'multi').reduce((a, m) => a + m.val, 0);
@@ -220,6 +242,47 @@ export const map = (): MapDef => MAPS[world.map];
 const SPAWN = MAPS[HOME].spawn;
 export const p: Player = {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, a: -Math.PI / 2, hp: stats().maxHp, sh: stats().maxSh,
                           target: null, firing: false, auto: false, multi: false, extra: [], launch: null, fix: false, fixAt: -99, fixing: false, mis: [], mleft: true, mining: null, beam: false, cd: 0, lastHit: -99, lastShot: -99, fight: 0, deaths: 0};
+// ---------- fichas dos P.E.T.s (experiência e nome) ----------
+type From = 'mods' | 'inv';
+const isPet = (k: ModKey) => MODS[k].type === 'pet';
+const blank = (): PetInfo => ({xp: 0, name: ''});
+/** a ficha do j-ésimo P.E.T. da lista from (criada vazia se faltar) */
+const info = (from: From, j: number) => (save.petInfo ??= {mods: [], inv: []})[from][j] ??= blank();
+const nth = (from: From, i: number) => save[from].slice(0, i).filter(isPet).length;
+/** nível (índice em PET_LEVELS: 0 = nível 1) para uma experiência */
+export const levelOf = (xp: number) => PET_LEVELS.filter(l => xp >= l.xp).length - 1;
+/** a ficha do item i da lista from (undefined se não for um P.E.T.) */
+export const petAt = (from: From, i: number): PetInfo | undefined => { const k = save[from][i]; return k && isPet(k) ? save.petInfo?.[from][nth(from, i)] ?? blank() : undefined; };
+/** a ficha do j-ésimo P.E.T. equipado (os P.E.T.s em voo, pets[j]) */
+export const flying = (j: number): PetInfo => save.petInfo?.mods[j] ?? blank();
+/** como um P.E.T. é chamado na tela: o nome que o jogador deu, ou "P.E.T." */
+export const petLabel = (o: PetInfo) => o.name || 'P.E.T.';
+/** dá nome ao P.E.T. que está no item i da lista from (vazio = volta a ser só "P.E.T."). Vale em qualquer lugar. */
+export function renamePet(from: From, i: number, name: string) {
+  const k = save[from][i];
+  if (!k || !isPet(k)) return false;
+  info(from, nth(from, i)).name = petName(name); persist();
+  return true;
+}
+/** Experiência para os P.E.T.s equipados (inimigo destruído, missão entregue): cada um ganha n. Quem sobe de nível, avisa. */
+export function petXp(n: number) {
+  const l = save.mods.filter(isPet);
+  if (!n || !l.length) return;
+  l.forEach((_, j) => {
+    const o = info('mods', j), was = levelOf(o.xp);
+    o.xp += n;
+    if (levelOf(o.xp) > was) texts.push({x: p.x, y: p.y - 50 - 18 * j, s: `${o.name || 'P.E.T.' + (l.length > 1 ? ' ' + (j + 1) : '')} subiu para o nível ${levelOf(o.xp) + 1}!`, c: '#8f8', t: 3});
+  });
+}
+// tirar e pôr um item numa lista, levando a ficha junto quando é um P.E.T.
+function take(from: From, i: number) {
+  const k = save[from][i], o = isPet(k) ? save.petInfo?.[from].splice(nth(from, i), 1)[0] ?? blank() : blank();
+  save[from].splice(i, 1);
+  return {k, o};
+}
+function put(to: From, k: ModKey, o = blank()) { if (isPet(k)) (save.petInfo ??= {mods: [], inv: []})[to][save[to].filter(isPet).length] = o; save[to].push(k); }
+/** os P.E.T.s em voo, um por P.E.T. equipado, na ordem da nave (sim.ts) */
+export const pets: Pet[] = [];
 export const rocks: Rock[] = [], drops: Drop[] = [], strikes: Strike[] = [], npcs: Npc[] = [];
 /** Troca o progresso atual pelo que veio de fora (o da conta, ao entrar) e conserta a nave para ele; false se não serve.
  *  Grava no navegador, mas não avisa onPersist: o servidor acabou de mandar esse mesmo progresso. */
@@ -247,36 +310,37 @@ const bought = (k: ModKey) => { for (const f of onBought) f(k); };
 /** compra um módulo: vai direto para a nave se houver slot livre do tipo, senão fica no inventário */
 export function buyMod(k: ModKey) {
   if (!atBase() || save.credits < MODS[k].cost) return false;
-  save.credits -= MODS[k].cost; (freeSlot(MODS[k].type) ? save.mods : save.inv).push(k); bought(k); settle();
+  save.credits -= MODS[k].cost; put(freeSlot(MODS[k].type) ? 'mods' : 'inv', k); bought(k); settle();
   return true;
 }
 /** dá um módulo de presente (missão): vai para a nave se houver slot livre do tipo, senão para o inventário */
-export function giveMod(k: ModKey) { (freeSlot(MODS[k].type) ? save.mods : save.inv).push(k); settle(); }
+export function giveMod(k: ModKey) { put(freeSlot(MODS[k].type) ? 'mods' : 'inv', k); settle(); }
 /** vende por metade do preço o módulo i da nave ('mods') ou do inventário ('inv') */
 export function sellMod(from: 'mods' | 'inv', i: number) {
   const k = save[from][i];
   if (!atBase() || !k) return false;
-  save[from].splice(i, 1); save.credits += MODS[k].cost / 2; settle();
+  take(from, i); save.credits += MODS[k].cost / 2; settle();
   return true;
 }
 /** inventário -> nave, se houver slot livre do tipo */
 export function equip(i: number) {
   const k = save.inv[i];
   if (!atBase() || !k || !freeSlot(MODS[k].type)) return false;
-  save.inv.splice(i, 1); save.mods.push(k); settle();
+  const it = take('inv', i); put('mods', it.k, it.o); settle();
   return true;
 }
 /** nave -> inventário */
 export function unequip(i: number) {
   const k = save.mods[i];
   if (!atBase() || !k) return false;
-  save.mods.splice(i, 1); save.inv.push(k); settle();
+  const it = take('mods', i); put('inv', it.k, it.o); settle();
   return true;
 }
 /** passa a usar outra nave do hangar; os módulos da nave que estava em uso vão todos para o inventário */
 export function useShip(k: ShipKey) {
   if (!atBase() || k === save.ship || !save.owned.includes(k)) return false;
-  save.inv.push(...save.mods.splice(0)); save.ship = k; settle();
+  while (save.mods.length) { const it = take('mods', 0); put('inv', it.k, it.o); }
+  save.ship = k; settle();
   return true;
 }
 /** compra uma nave que o jogador ainda não tem e já passa a usá-la (as outras continuam no hangar) */

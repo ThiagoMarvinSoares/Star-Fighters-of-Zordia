@@ -12,7 +12,7 @@
 import type { EnemyKey, MapKey, ModKey, ModType, OreKey } from './data.ts';
 import { MAPS, HOME } from './data.ts';
 import { MODS } from './data.ts';
-import { save, giveMod, onBought } from './state.ts';
+import { save, giveMod, onBought, petXp } from './state.ts';
 import type { QuestStage } from './state.ts';
 
 /** Quem fala nas conversas (os retratos ficam em ui/missions.ts). Elyra, Heathcliff e os sistemas não têm rosto: falam
@@ -534,7 +534,7 @@ export function talkDone(track: Track = 'main', answer = true): { items: ModKey[
     if (m.ask && !answer && !m.ask.otherwise) { set(track, {id: m.id, stage: 'active', n: 0}); return got; }
     if (!save.paid?.includes(m.id)) { // refeita: sem entrega de minério e sem recompensa
       for (const [ore, n] of Object.entries(m.take ?? {}) as [OreKey, number][]) save.cargo[ore] -= Math.min(n, Math.floor(save.cargo[ore]));
-      if (m.reward?.credits) { save.credits += m.reward.credits; got.credits = m.reward.credits; }
+      if (m.reward?.credits) { save.credits += m.reward.credits; got.credits = m.reward.credits; petXp(m.reward.credits); }
       for (const k of m.reward?.items ?? []) { giveMod(k); got.items.push(k); }
     }
     const next = m.next ? byId.get(m.next) : undefined;

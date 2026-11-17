@@ -1,18 +1,20 @@
 // Simulação: as regras do jogo. Só altera o estado; não sabe nada de canvas, tela nem teclado.
-import { NPCS, RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ENEMY_MISSILE, PORTAL_R, PICKUP_R, BOSS_DROP, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
+import { NPCS, RANGE, SHOT_SPEED, MISSILE_CHARGES, MISSILE_CD, MISSILE_SPEED, MISSILE_R, KEEP_MARGIN, CLEAR, LEASH, COMBAT, REPAIR_DELAY, ENEMY_MISSILE, PORTAL_R, PICKUP_R, BOSS_DROP, PET, PET_LEVELS, MINE_RANGE, ROCK_ORE, MODS, ORES, MAPS, HOME } from './data.ts';
 import type { EnemyDef, MapDef, MapKey } from './data.ts';
 import type { ModelKey, ModKey } from './data.ts';
-import { save, persist, stats, cargoUsed, p, enemies, rocks, drops, strikes, shots, texts, parts, events, world, map, npcs } from './state.ts';
-import type { Body, Enemy, Player, Rock } from './state.ts';
+import { save, persist, stats, cargoUsed, p, pets, levelOf, flying, petXp, enemies, rocks, drops, strikes, shots, texts, parts, events, world, map, npcs } from './state.ts';
+import type { Body, Enemy, Pet, Player, Rock } from './state.ts';
+import type { Vec3 } from './models.ts';
 import { clamp, dist, rnd, rand } from './util.ts';
 import type { Point } from './util.ts';
-import { HARD, ENGINES, SCALE, mount } from './models.ts';
+import { HARD, ENGINES, SCALE, PET_GUNS, mount } from './models.ts';
 import { progress, arrive } from './missions.ts';
 
 type Heading = Point & { a: number };
 
 let now = 0; // relógio do jogo, em segundos
 const bossAt: Partial<Record<MapKey, number>> = {}; // quando o chefe de cada mapa (re)nasce; lembrado mesmo fora do mapa
+let petA = 0; // para onde a formação dos P.E.T.s está virada (acompanha a direção da nave, girando aos poucos)
 let seeded = false; // o mapa atual já recebeu a população inicial
 /** guardas de um ponto fixo (MapDef.guards): ficam fora da cota do tipo deles e não são repostos */
 export const guards = new WeakSet<Enemy>();
@@ -47,6 +49,7 @@ export function travel(to: MapKey, x: number, y: number) {
   world.map = to; seeded = false;
   enemies.length = rocks.length = drops.length = strikes.length = shots.length = parts.length = texts.length = npcs.length = 0; // espólio deixado para trás se perde
   Object.assign(p, {x, y, tx: x, ty: y, target: null, mining: null, beam: false});
+  for (const q of pets) q.hp = 0; // os P.E.T.s reaparecem já atrás da nave
 }
 
 /** Retoma de onde o progresso parou (ao abrir o jogo ou entrar com um piloto): a nave volta ao mapa, ao ponto, à vida e ao
@@ -172,9 +175,9 @@ function spawn(i: number, away: boolean): Enemy {
 }
 
 // dispara o tiro i da nave src (modelo key), saindo do ponto de fixação i, depois de delay segundos
-const shoot = (src: Player | Enemy, r: number, key: ModelKey, i: number, tgt: Player | Enemy, dmg: number, c: string, delay: number, mod?: ModKey, miss = false, missile = false, lane = 0) => {
+const shoot = (src: Player | Enemy | Pet, r: number, guns: Vec3[], i: number, tgt: Player | Enemy, dmg: number, c: string, delay: number, mod?: ModKey, miss = false, missile = false, lane = 0) => {
   const a = rnd(0, 6.28), m = ('t' in tgt ? tgt.t.r : 20) * 1.5 + rnd(25, 60); // quem erra passa ao lado do alvo, fora do casco
-  shots.push({src, r, hard: HARD[key][i % HARD[key].length], tgt, dmg, c, delay, mod, live: false, x: 0, y: 0, a: 0, h: 0, missile, lane,
+  shots.push({src, r, hard: guns[i % guns.length], tgt, dmg, c, delay, mod, live: false, x: 0, y: 0, a: 0, h: 0, missile, lane,
               off: miss ? {x: Math.cos(a) * m, y: Math.sin(a) * m} : undefined});
 };
 
@@ -233,6 +236,7 @@ export function update(dt: number) {
   }
   const t = p.target;
   p.extra = [];
+  let volley = false; // os lasers dispararam neste quadro (o P.E.T. atira junto, logo abaixo)
   if (t) {
     const td = dist(p, t);
     if (td > 1500) p.target = null;
@@ -243,15 +247,40 @@ export function update(dt: number) {
     if (p.target && p.multi && st.multi && !inBase && td <= RANGE)
       p.extra = enemies.filter(e => e !== t && dist(p, e) <= RANGE).sort((a, b) => +b.hostile - +a.hostile || dist(p, a) - dist(p, b)).slice(0, st.multi);
     if (p.target && !inBase && (p.firing || p.auto) && td <= RANGE && p.cd <= 0 && st.dmg) {
-      p.cd = 1; p.lastShot = now;
+      p.cd = 1; p.lastShot = now; volley = true;
       // um tiro por módulo de laser, cada um saindo do seu ponto de fixação e com o dano do seu módulo; com múltiplos
       // alvos, os lasers se revezam entre eles (o laser 0 no principal, o 1 no primeiro extra, e assim por diante)
       const tgts = [t, ...p.extra];
       for (const e of tgts) e.hostile = true;
       save.mods.filter(m => MODS[m].type === 'laser').forEach((m, i, l) =>
-        shoot(p, st.r, save.ship, i, tgts[i % tgts.length], Math.round(MODS[m].val * st.boost * rnd(.85, 1.15)), '#4cf', i / l.length, m, rand() >= st.acc));
+        shoot(p, st.r, HARD[save.ship], i, tgts[i % tgts.length], Math.round(MODS[m].val * st.boost * rnd(.85, 1.15)), '#4cf', i / l.length, m, rand() >= st.acc));
     }
   }
+
+  // ---------- P.E.T.s ----------
+  // Um por P.E.T. equipado. Voam PET.h acima da nave, em formação (PET.formation): atrás dela e dos lados.
+  // Andam junto com a nave, sem atraso; só nas curvas a formação leva um instante para girar atrás dela. Apontam para o
+  // alvo enquanto a nave ataca; senão, para onde ela aponta. Cada um atira a cada salva dos lasers, no alvo principal, com a % do dano da nave do nível dele
+  // (PET_LEVELS) dividida pelos canos; erram como os lasers.
+  const pks = save.mods.filter(k => MODS[k].type === 'pet');
+  for (const q of pets.slice(pks.length)) q.hp = 0; // desequipado: os tiros que ainda não saíram dele se perdem
+  pets.length = Math.min(pets.length, pks.length);
+  if (!pets.some(q => q.hp)) petA = p.a; // formação nova (ou depois de trocar de mapa): já no lugar
+  petA += Math.atan2(Math.sin(p.a - petA), Math.cos(p.a - petA)) * (1 - Math.exp(-PET.turn * dt)); // pelo lado mais curto
+  const unit = (st.r + PET.r) * SCALE + PET.gap, c = Math.cos(petA), s = Math.sin(petA); // uma "folga" (ver PET)
+  const aim = !!p.target && !inBase && (p.firing || p.auto) && dist(p, p.target) <= RANGE;
+  const spots = PET.formation[Math.min(pks.length, PET.formation.length) - 1];
+  pks.forEach((mod, i) => {
+    const lv = PET_LEVELS[levelOf(flying(i).xp)]; // cada P.E.T. no nível dele
+    const [b, r] = spots?.[i] ?? [2.2, 0], d = b * unit, side = r * unit; // (mais de 3: em fila atrás)
+    const q = pets[i] ??= {x: 0, y: 0, a: p.a, h: PET.h, hp: 1, mod};
+    Object.assign(q, {x: p.x - c * d - s * side, y: p.y - s * d + c * side, hp: 1, mod});
+    q.a = aim && p.target ? Math.atan2(p.target.y - q.y, p.target.x - q.x) : p.a;
+    if (volley && t) {
+      const guns = PET_GUNS[lv.model] ?? [[1, 0, 0]];
+      guns.forEach((_, g) => shoot(q, PET.r, guns, g, t, Math.round(st.dmg * lv.dmg / 100 / guns.length * rnd(.85, 1.15)), '#8f8', .3 + (i + g) * .1, mod, rand() >= st.acc));
+    }
+  });
 
   // a chama sai dos bocais na posição final da nave (depois de ela virar para o alvo) e tem a cor do motor equipado
   if (moved) thrust(p, st.r, save.ship, st.flame);
@@ -303,7 +332,7 @@ export function update(dt: number) {
       c.n--; c.t = MISSILE_CD; p.mleft = !left; t.hostile = true; p.lastShot = now; progress({use: 'missile'});
       // ponto de fixação 1 = lado esquerdo da nave, 0 = direito (os pares de HARD são espelhados); a faixa de voo
       // acompanha o lado, para dois mísseis seguidos irem lado a lado e não em fila
-      shoot(p, st.r, save.ship, left ? 1 : 0, t, Math.round(MODS[m].val * st.boost), '#fa4', 0, m, rand() >= st.acc, true, (left ? -1 : 1) * LANE / 2);
+      shoot(p, st.r, HARD[save.ship], left ? 1 : 0, t, Math.round(MODS[m].val * st.boost), '#fa4', 0, m, rand() >= st.acc, true, (left ? -1 : 1) * LANE / 2);
     }
   }
 
@@ -326,7 +355,7 @@ export function update(dt: number) {
       if (ed < (e.t.range ?? 500) && e.cd <= 0) {
         e.cd = 1.3;
         const n = HARD[e.t.key].length;
-        for (let i = 0; i < n; i++) shoot(e, e.t.r, e.t.key, i, p, Math.round(e.t.dmg / n), e.t.color, i / n * 1.3);
+        for (let i = 0; i < n; i++) shoot(e, e.t.r, HARD[e.t.key], i, p, Math.round(e.t.dmg / n), e.t.color, i / n * 1.3);
       }
       // míssil: mira onde o jogador está agora e avisa com o risco; não corrige a mira depois
       if (e.t.missile && e.mcd <= 0 && ed < (e.t.range ?? 500)) {
@@ -361,8 +390,8 @@ export function update(dt: number) {
     if (q.tgt.hp <= 0 || !q.live && q.src.hp <= 0) { shots.splice(i, 1); continue; } // alvo ou atirador já morreu
     if (!q.live) { // nasce no ponto de fixação, na posição/rotação atual da nave
       const at = mount(q.src, q.r, q.hard);
-      q.x = at.x; q.y = at.y; q.h = q.hard[1] * q.r * SCALE; q.live = true;
-      events.push({kind: 'shot', x: q.x, y: q.y, h: q.h, c: q.c, mine: q.src === p, mod: q.mod});
+      q.x = at.x; q.y = at.y; q.h = q.hard[1] * q.r * SCALE + ('h' in q.src ? q.src.h : 0); q.live = true; // P.E.T.: da altura em que ele voa
+      events.push({kind: 'shot', x: q.x, y: q.y, h: q.h, c: q.c, mine: q.src === p || pets.includes(q.src as Pet), mod: q.mod});
     }
     let dx = q.tgt.x + (q.off?.x ?? 0) - q.x, dy = q.tgt.y + (q.off?.y ?? 0) - q.y;
     const d = Math.hypot(dx, dy), m = (q.missile ? MISSILE_SPEED : SHOT_SPEED) * dt;
@@ -390,7 +419,7 @@ export function update(dt: number) {
         bossAt[world.map] = now + boss.respawn; save.boss = {...save.boss, [world.map]: Date.now() + boss.respawn * 1000};
         drops.push({x: tg.x, y: tg.y, item: BOSS_DROP});
       }
-      save.credits += tg.t.reward; progress({kill: tg.t.key}); if (p.auto) progress({use: 'auto'}); persist();
+      save.credits += tg.t.reward; petXp(tg.t.reward); progress({kill: tg.t.key}); if (p.auto) progress({use: 'auto'}); persist();
       float(tg, '+' + tg.t.reward + ' cr', '#fd4', 1.5);
     }
   }
@@ -434,6 +463,7 @@ export function update(dt: number) {
     const SPAWN = MAPS[HOME].spawn; // renasce sempre na base do mapa inicial, esteja onde estiver
     if (world.map !== HOME) travel(HOME, SPAWN.x, SPAWN.y);
     Object.assign(p, {x: SPAWN.x, y: SPAWN.y, tx: SPAWN.x, ty: SPAWN.y, hp: st.maxHp, sh: st.maxSh, target: null, firing: false, extra: [], launch: null, mis: [], mleft: true, mining: null, beam: false, lastHit: -99, lastShot: -99, fight: 0, fixAt: -99, fixing: false});
+    for (const q of pets) q.hp = 0;
     p.deaths++; // input.ts usa isso para soltar o botão do mouse
     persist(); // a posição salva passa a ser a da base: recarregar a página não devolve a nave ao lugar onde morreu
     enemies.forEach(calm);

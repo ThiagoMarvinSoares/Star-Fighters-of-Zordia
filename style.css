@@ -93,6 +93,10 @@ canvas{display:block;cursor:crosshair}
   border:1px solid var(--ln);background:#0d1d38cc}
 #shop .det.hint{display:block;color:var(--dim);font-size:12px}
 #shop .det b{display:block;color:#fff}
+/* nome do P.E.T.: o título do painel, editável */
+#shop .det input.name{display:block;width:100%;box-sizing:border-box;padding:0 0 1px;border:0;border-bottom:1px dashed var(--ln);background:none;color:#fff;font:inherit;font-weight:bold;outline:none}
+#shop .det input.name:focus{border-bottom-color:var(--k)}
+#shop .det input.name::placeholder{color:var(--dim);font-weight:normal}
 #shop .det .btns{grid-column:1/3;display:flex;gap:6px}
 #shop .det .btns button{flex:1;white-space:nowrap}
 /* minério: dois botões com valor no texto não cabem lado a lado; ficam um embaixo do outro, na largura toda */

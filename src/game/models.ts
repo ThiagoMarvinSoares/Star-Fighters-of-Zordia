@@ -48,3 +48,12 @@ export const HARD: Record<ModelKey, Vec3[]> = {
   unsa: [],
   station: [],
 };
+
+// P.E.T.s (data.ts, módulos do tipo 'pet'): de onde saem os tiros, por modelo (public/models/pets/<modelo>.glb), nas
+// mesmas coordenadas das naves. Medidos nos .glb: a lente na frente (Mk1 a Mk3) e as pontas dos dois canos (Mk4).
+export const PET_GUNS: Record<string, Vec3[]> = {
+  pet1: [[.97, 0, 0]],
+  pet2: [[.95, 0, 0]],
+  pet3: [[.53, 0, 0]],
+  pet4: [[.55, -.31, .65], [.55, -.31, -.65]],
+};
